@@ -48,7 +48,10 @@ const Domicilio = require('../models/Domicilio'); // ajusta la ruta si es necesa
 // Controlador para obtener todos los bauchers
 const obtenerAgenda = async (req, res) => {
   try {
-    const agendas = await Agenda.find().populate('domicilio');
+    const agendas = await Agenda.find()
+      .populate('domicilio')
+      .sort({ fecha: -1, hora: -1 }); // fecha descendente, luego hora descendente
+
     res.status(200).json(agendas);
   } catch (error) {
     console.error('Error al obtener agendas:', error);
