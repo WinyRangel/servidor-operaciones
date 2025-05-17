@@ -50,7 +50,7 @@ const obtenerAgenda = async (req, res) => {
   try {
     const agendas = await Agenda.find()
       .populate('domicilio')
-      .sort({ fecha: -1, hora: -1 }); // fecha descendente, luego hora descendente
+      .sort({ fecha: 1, hora: 1 }); // fecha descendente, luego hora descendente
 
     res.status(200).json(agendas);
   } catch (error) {
