@@ -2,36 +2,43 @@ const Agenda = require ('../models/Agenda');
 const Domicilio = require('../models/Domicilio'); // ajusta la ruta si es necesario
 
 
-  const registrarAgenda = async (req, res) => {
-    try {
-      const { domicilio, ...datosAgenda } = req.body;
+const registrarAgenda = async (req, res) => {
+  try {
+    const { domicilio, ...datosAgenda } = req.body;
 
-      // Si viene un domicilio, guárdalo en su propio modelo
-      let domicilioGuardado = null;
-      if (domicilio) {
+    let domicilioGuardado = null;
+
+    if (domicilio) {
+      // Buscar si ya existe un domicilio con ese nombre
+      domicilioGuardado = await Domicilio.findOne({ nombre: domicilio });
+
+      // Si no existe, lo crea
+      if (!domicilioGuardado) {
         const nuevoDomicilio = new Domicilio({ nombre: domicilio });
         domicilioGuardado = await nuevoDomicilio.save();
       }
-
-      // Guarda la agenda
-      const nuevaAgenda = new Agenda({
-        ...datosAgenda,
-        domicilio: domicilioGuardado ? domicilioGuardado._id : undefined // guarda la referencia si existe
-      });
-
-      const agendaGuardada = await nuevaAgenda.save();
-
-      res.status(201).json({
-        mensaje: 'Agenda y domicilio registrados correctamente',
-        agenda: agendaGuardada,
-        domicilio: domicilioGuardado
-      });
-
-    } catch (error) {
-      console.error('Error al crear agenda y domicilio:', error);
-      res.status(500).json({ mensaje: 'Hubo un error al crear la agenda y domicilio' });
     }
-  };
+
+    // Crea y guarda la agenda con el domicilio (si existe)
+    const nuevaAgenda = new Agenda({
+      ...datosAgenda,
+      domicilio: domicilioGuardado ? domicilioGuardado._id : undefined
+    });
+
+    const agendaGuardada = await nuevaAgenda.save();
+
+    res.status(201).json({
+      mensaje: 'Agenda y domicilio registrados correctamente',
+      agenda: agendaGuardada,
+      domicilio: domicilioGuardado
+    });
+
+  } catch (error) {
+    console.error('Error al crear agenda y domicilio:', error);
+    res.status(500).json({ mensaje: 'Hubo un error al crear la agenda y domicilio' });
+  }
+};
+
 
   const obtenerDomicilios = async (req, res) => {
   try {
@@ -86,11 +93,11 @@ const actualizarAgenda = async (req, res) => {
 
     try {
         const { id } = req.params;
-        const { codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda } = req.body;
+        const { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda } = req.body;
 
         const agendaActualizada = await Agenda.findByIdAndUpdate(
             id,
-            { codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda },
+            { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda },
             { new: true }
         );
 

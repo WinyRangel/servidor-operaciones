@@ -13,6 +13,10 @@ const AgendaSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  objetivo:{
+    type: String,
+    required: false
+  },
   hora: {
     type: String,
     required: false
