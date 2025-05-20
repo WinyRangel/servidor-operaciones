@@ -2,10 +2,11 @@ const mongoose = require('mongoose');
 
 const domicilioSchema = new mongoose.Schema({
   nombre: {
-    type: String,
-    unique: true,
-    required: true
-  }
+  type: String,
+  required: true,
+  default: 'SIN AGENDAR'
+}
+
 });
 
 module.exports = mongoose.model('Domicilio', domicilioSchema);

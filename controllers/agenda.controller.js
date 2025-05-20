@@ -1,5 +1,5 @@
 const Agenda = require ('../models/Agenda');
-const Domicilio = require('../models/Domicilio'); // ajusta la ruta si es necesario
+const Domicilio = require('../models/Domicilio'); 
 
 
 const registrarAgenda = async (req, res) => {
@@ -17,9 +17,11 @@ const registrarAgenda = async (req, res) => {
         const nuevoDomicilio = new Domicilio({ nombre: domicilio });
         domicilioGuardado = await nuevoDomicilio.save();
       }
+    } else {
+      // Si no se envía domicilio, usar "SIN AGENDAR"
+      domicilioGuardado = await Domicilio.findOne({ nombre: 'SIN AGENDAR' });
     }
 
-    // Crea y guarda la agenda con el domicilio (si existe)
     const nuevaAgenda = new Agenda({
       ...datosAgenda,
       domicilio: domicilioGuardado ? domicilioGuardado._id : undefined
@@ -39,7 +41,6 @@ const registrarAgenda = async (req, res) => {
   }
 };
 
-
   const obtenerDomicilios = async (req, res) => {
   try {
     const domicilios = await Domicilio.find().sort({ nombre: 1 }); // opcional: ordena alfabéticamente
@@ -49,9 +50,6 @@ const registrarAgenda = async (req, res) => {
     res.status(500).json({ mensaje: 'Hubo un error al obtener los domicilios' });
   }
 };
-
-
-
 // Controlador para obtener todos los bauchers
 const obtenerAgenda = async (req, res) => {
   try {
@@ -65,10 +63,6 @@ const obtenerAgenda = async (req, res) => {
     res.status(500).json({ mensaje: 'Hubo un error al obtener las agendas' });
   }
 };
-
-
-
-
 
 // Controlador para obtener agendas por coordinador
 const obtenerAgendasPorCoordinador = async (req, res) => {
@@ -112,6 +106,26 @@ const actualizarAgenda = async (req, res) => {
     }
 };
 
+const eliminarAgenda = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Buscar la agenda por ID
+    const agenda = await Agenda.findById(id);
+
+    if (!agenda) {
+      return res.status(404).json({ mensaje: 'Agenda no encontrada' });
+    }
+
+    // Eliminar la agenda
+    await Agenda.findByIdAndDelete(id);
+
+    res.status(200).json({ mensaje: 'Agenda eliminada correctamente' });
+  } catch (error) {
+    console.error('Error al eliminar la agenda:', error);
+    res.status(500).json({ mensaje: 'Hubo un error al eliminar la agenda' });
+  }
+};
 
 
 
@@ -120,7 +134,8 @@ module.exports = {
     obtenerAgenda,
     obtenerAgendasPorCoordinador,
     actualizarAgenda,
-    obtenerDomicilios
+    obtenerDomicilios,
+    eliminarAgenda
 }
 
 
