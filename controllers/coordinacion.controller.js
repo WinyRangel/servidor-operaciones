@@ -1,21 +1,24 @@
 const Coordinacion = require('../models/Coordinacion');
 
 // Controlador para obtener todos los bauchers
-exports.obtenerCoordinacion = async (req, res)=>{
-    try{
-        const coordinaciones = await Coordinacion.find({}, {
-            nombre: 1,
-            municipio: 1,
-            'coordinador.nombre': 1,
-            'ejecutivas.nombre': 1
-          });
-          
-        res.json(coordinaciones)
-    } catch(error){
-        console.log(error);
-        res.status(500).send('Error')
-    }
-}
+exports.obtenerCoordinacion = async (req, res) => {
+  try {
+    const coordinaciones = await Coordinacion.find({}, {
+      nombre: 1,
+      municipio: 1,
+      'coordinador.nombre': 1,
+      'coordinador.rendimiento': 1,
+      'coordinador.coche': 1,
+      'ejecutivas.nombre': 1
+    });
+
+    res.json(coordinaciones);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send('Error');
+  }
+};
+
 
 exports.crearCoordinacion = async (req, res) => {
   try {

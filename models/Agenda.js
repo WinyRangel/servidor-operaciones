@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const AgendaSchema = new mongoose.Schema({
   coordinador: { 
-    type: String, // O un objeto si prefieres
+    type: String, 
     required: false 
   },
   semana: {

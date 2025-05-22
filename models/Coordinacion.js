@@ -11,7 +11,7 @@ const coordinacionSchema = new mongoose.Schema({
   coordinador: [{
     nombre: String,
     coche: String,
-    rendimiento: Number // ✅ Corregido de 'float' a 'Number'
+    rendimiento: Number 
   }] 
 });
 
