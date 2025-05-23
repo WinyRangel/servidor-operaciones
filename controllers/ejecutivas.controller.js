@@ -24,7 +24,7 @@ exports.obtenerActividades = async (req, res) => {
 };
 
 // Eliminar una actividad por su ID
-exports.eliminarActividad = async (req, res) => {
+exports.eliminarRegistro = async (req, res) => {
   try {
     const { id } = req.params;
     const eliminado = await Ejecutiva.findByIdAndDelete(id);

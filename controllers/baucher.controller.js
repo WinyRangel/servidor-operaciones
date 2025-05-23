@@ -33,12 +33,20 @@ const crearBaucher = async (req, res) => {
       return res.status(400).json({ mensaje: 'El campo fechaReporte es obligatorio' });
     }
 
-    // Función para calcular la diferencia en días
     const calcularDiasDiferencia = (fecha1, fecha2) => {
       if (!fecha1 || !fecha2) return null;
-      const diffTime = new Date(fecha1).getTime() - new Date(fecha2).getTime();
-      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      const f1 = new Date(fecha1);
+      const f2 = new Date(fecha2);
+
+      // Eliminar la parte de la hora (convertir a medianoche)
+      f1.setHours(0, 0, 0, 0);
+      f2.setHours(0, 0, 0, 0);
+
+      const diffTime = f1 - f2;
+      return Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
     };
+
 
     // Crear instancia del nuevo baucher
     const nuevoBaucher = new Baucher({
