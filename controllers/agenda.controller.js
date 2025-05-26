@@ -87,11 +87,11 @@ const actualizarAgenda = async (req, res) => {
 
     try {
         const { id } = req.params;
-        const { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda } = req.body;
+        const { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido } = req.body;
 
         const agendaActualizada = await Agenda.findByIdAndUpdate(
             id,
-            { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda },
+            { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido },
             { new: true }
         );
 
