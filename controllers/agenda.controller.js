@@ -52,7 +52,7 @@ const Domicilio = require('../models/Domicilio');
   };
 
   // Controlador para obtener todas las agendas
-  const obtenerAgenda = async (req, res) => {
+  const obtenerAgendas1 = async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 315;
@@ -90,6 +90,20 @@ const Domicilio = require('../models/Domicilio');
         totalPages: Math.ceil(total / limit),
         currentPage: page
       });
+    } catch (error) {
+      console.error('Error al obtener agendas:', error);
+      res.status(500).json({ mensaje: 'Hubo un error al obtener las agendas' });
+    }
+  };
+
+  // Controlador para obtener todos los bauchers
+  const obtenerAgenda = async (req, res) => {
+    try {
+      const agendas = await Agenda.find()
+        .populate('domicilio')
+        .sort({ fecha: 1, hora: 1 }); // fecha descendente, luego hora descendente
+
+      res.status(200).json(agendas);
     } catch (error) {
       console.error('Error al obtener agendas:', error);
       res.status(500).json({ mensaje: 'Hubo un error al obtener las agendas' });
@@ -149,7 +163,8 @@ module.exports = {
     obtenerAgenda,
     actualizarAgenda,
     obtenerDomicilios,
-    eliminarAgenda
+    eliminarAgenda,
+    obtenerAgendas1
 }
 
 
