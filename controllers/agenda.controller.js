@@ -64,6 +64,7 @@ const Domicilio = require('../models/Domicilio');
         fecha: 1,
         hora: 1,
         actividad: 1,
+        codigo:1,
         actividadReportada: 1,
         reportado: 1,
         horaReporte: 1,
