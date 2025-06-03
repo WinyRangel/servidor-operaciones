@@ -60,6 +60,7 @@ const Domicilio = require('../models/Domicilio');
 
       const projection = {
         _id: 1,
+        coordinador:1,
         fecha: 1,
         hora: 1,
         actividad: 1,
