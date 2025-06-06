@@ -35,6 +35,10 @@ const AgendaSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  codigoReportado: {
+  type: String,
+  required: false
+},
   actividadReportada: {
     type: String,
     default: ''

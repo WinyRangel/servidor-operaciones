@@ -66,6 +66,7 @@ const Domicilio = require('../models/Domicilio');
         hora: 1,
         actividad: 1,
         codigo:1,
+        codigoReportado: 1,
         actividadReportada: 1,
         reportado: 1,
         horaReporte: 1,
@@ -118,11 +119,11 @@ const Domicilio = require('../models/Domicilio');
 
       try {
           const { id } = req.params;
-          const { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido } = req.body;
+          const { fecha, hora, domicilio, codigo, codigoReportado, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido } = req.body;
 
           const agendaActualizada = await Agenda.findByIdAndUpdate(
               id,
-              { fecha, hora, domicilio, codigo, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido },
+              { fecha, hora, domicilio, codigo, codigoReportado, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido },
               { new: true }
           );
 
