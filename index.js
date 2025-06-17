@@ -5,7 +5,7 @@ const conectarDB = require('./config/db');
 const cors = require("cors");
 
 // Importar el modelo Domicilio
-const Domicilio = require('./models/Domicilio'); // Asegúrate de que la ruta sea correcta
+const Domicilio = require('./models/Domicilio'); 
 
 // Creamos el servidor
 const app = express();
@@ -25,6 +25,8 @@ app.use('/', require('./routes/legales.routes'));
 app.use('/', require('./routes/agenda.routes'));
 app.use('/', require('./routes/ejecutivas.routes'));
 app.use('/', require('./routes/depositos.routes'));
+app.use('/api/proyecciones', require('./routes/proyeccion.routes'));
+
 
 // Inicializar domicilio por defecto
 const inicializarDomicilioPorDefecto = async () => {
