@@ -2,9 +2,10 @@ const mongoose = require('mongoose');
 
 const AgendaSchema = new mongoose.Schema({
   coordinador: { 
-    type: String, 
-    required: false 
-  },
+  type: mongoose.Schema.Types.ObjectId, 
+  ref: 'Usuario', 
+  required: false 
+},
   semana: {
     type: String,
     required: true

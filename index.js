@@ -13,12 +13,14 @@ const app = express();
 // Conectamos a la BD
 conectarDB();
 
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Rutas
+app.use('/', require('./routes/auth.routes'));
 app.use('/', require('./routes/baucher.routes'));
 app.use('/', require('./routes/coordinacion.routes'));
 app.use('/', require('./routes/legales.routes'));

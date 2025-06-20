@@ -10,6 +10,7 @@ const coordinacionSchema = new mongoose.Schema({
   ],
   coordinador: [{
     nombre: String,
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
     coche: String,
     rendimiento: Number 
   }] 

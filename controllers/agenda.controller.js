@@ -4,6 +4,7 @@ const Domicilio = require('../models/Domicilio');
 
   const registrarAgenda = async (req, res) => {
     try {
+      console.log('Usuario logueado:', req.user); // ✅ DEBUG
       const { domicilio, ...datosAgenda } = req.body;
 
       let domicilioGuardado = null;
@@ -61,11 +62,11 @@ const Domicilio = require('../models/Domicilio');
       const projection = {
         _id: 1,
         semana: 1, 
-        coordinador:1,
+        coordinador: 1,
         fecha: 1,
         hora: 1,
         actividad: 1,
-        codigo:1,
+        codigo: 1,
         codigoReportado: 1,
         actividadReportada: 1,
         reportado: 1,
@@ -78,12 +79,13 @@ const Domicilio = require('../models/Domicilio');
 
       const [agendas, total] = await Promise.all([
         Agenda.find({}, projection)
-          .populate('domicilio', 'nombre')
+          .populate('domicilio', 'nombre')             // Ya lo tienes
+          .populate('coordinador', 'usuario')
           .sort({ fecha: 1, hora: 1 })
           .skip(skip)
           .limit(limit)
           .lean(),
-          
+
         Agenda.countDocuments()
       ]);
 
@@ -98,6 +100,43 @@ const Domicilio = require('../models/Domicilio');
       res.status(500).json({ mensaje: 'Hubo un error al obtener las agendas' });
     }
   };
+
+
+
+  const obtenerPorCoordinador = async (req, res) => {
+    try {
+      // ✅ Extraer coordinadorId del token
+      const coordinadorId = req.user.coordinadorId;
+
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10000;
+      const skip = (page - 1) * limit;
+
+      const filtro = { coordinador: coordinadorId }; // ✅ Este debe coincidir con el campo en tus agendas
+
+      const [agendas, total] = await Promise.all([
+        Agenda.find(filtro)
+          .populate('domicilio', 'nombre')
+          .sort({ fecha: 1, hora: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+
+        Agenda.countDocuments(filtro)
+      ]);
+
+      res.status(200).json({
+        agendas,
+        total,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page
+      });
+    } catch (err) {
+      console.error('Error al obtener agendas por coordinador:', err);
+      res.status(500).json({ mensaje: 'Error en el servidor' });
+    }
+  };
+
 
   // Controlador para obtener todos los bauchers
   const obtenerAgenda = async (req, res) => {
@@ -167,7 +206,8 @@ module.exports = {
     actualizarAgenda,
     obtenerDomicilios,
     eliminarAgenda,
-    obtenerAgendas1
+    obtenerAgendas1,
+    obtenerPorCoordinador
 }
 
 
