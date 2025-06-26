@@ -7,6 +7,8 @@ const ProyeccionSchema = new mongoose.Schema({
   cliente: { type: String, default: '' },
   fechaEntregaAgendadaOpe: { type: Date, default: null },
   fechaEntregaAgendada: { type: Date, default: null },
+  refil: { type: String, default: '' },
+  mes: { type: String, default: '' },
   fechaEnvioOperativo: { type: Date, default: null },
   hora: { type: String, default: '' },
   diasRetrasoExpOp: { type: Number, default: 0 },

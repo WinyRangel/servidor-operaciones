@@ -9,10 +9,7 @@ exports.saveProyecciones = async (req, res) => {
       return res.status(400).json({ message: 'No se enviaron datos' });
     }
 
-    // Normalizar cada item: strings vacías => '-' o '' según convenga; fechas vacías => null; números undefined => 0 o null
     const normalizados = items.map(item => {
-      // Para fechas: asumimos que el frontend envía ISO strings o ''/undefined.
-      // Si es string no vacío, creamos Date; si no, null.
       const toDateOrNull = val => {
         if (!val) return null;
         const d = new Date(val);
@@ -33,7 +30,8 @@ exports.saveProyecciones = async (req, res) => {
         incidenciasOperativo: (item.incidenciasOperativo != null ? String(item.incidenciasOperativo).trim() : '').trim() || '-',
         fechaLimiteEntrega: toDateOrNull(item.fechaLimiteEntrega),
         fechaRealReciboExpLegal: toDateOrNull(item.fechaRealReciboExpLegal),
-        renovado: item.renovado === true, // si no llega o es false, queda false
+        renovado: item.renovado === true,
+        refil: (item.refil != null ? String(item.refil).trim() : '').trim() || '',
         mes: (item.mes != null ? String(item.mes).trim() : '').trim() || ''
       };
     });
@@ -73,7 +71,6 @@ exports.getProyeccionById = async (req, res) => {
 exports.updateProyeccion = async (req, res) => {
   try {
     const item = req.body;
-    // Normalizar campos que vienen en item, similar a saveProyecciones:
     const toDateOrNull = val => {
       if (!val) return null;
       const d = new Date(val);
@@ -81,7 +78,6 @@ exports.updateProyeccion = async (req, res) => {
     };
 
     const updateObj = {};
-    // Solo actualizar propiedades que vengan definidas en req.body:
     if (item.coordinacion !== undefined) {
       updateObj.coordinacion = String(item.coordinacion).trim() || '-';
     }
@@ -117,6 +113,9 @@ exports.updateProyeccion = async (req, res) => {
     }
     if (item.renovado !== undefined) {
       updateObj.renovado = item.renovado === true;
+    }
+    if (item.refil !== undefined) {
+      updateObj.refil = String(item.refil).trim() || '';
     }
 
     const updated = await Proyeccion.findByIdAndUpdate(
