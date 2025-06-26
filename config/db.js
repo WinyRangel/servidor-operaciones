@@ -1,15 +1,14 @@
 const mongoose = require('mongoose');
 require('dotenv').config({ path: 'variables.env' });
 
-const Agenda = require('../models/Agenda'); // ajusta el path si es necesario
-const Usuario = require('../models/Usuario');
-
 const conectarDB = async () => {
 
     try {
 
         await mongoose.connect(process.env.DB_MONGO, {
-           
+            //useNewUrlParser: true,
+            //useUnifiedTopology: true,
+            //useFindAndModify: false
         })
         console.log('BD Conectada');
         
@@ -20,4 +19,4 @@ const conectarDB = async () => {
 
 }
 
-module.exports = conectarDB;
+module.exports = conectarDB
