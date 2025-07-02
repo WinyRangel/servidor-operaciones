@@ -17,6 +17,10 @@ const AgendaSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  meta: {
+  type: String,
+  required: false
+},
   hora: {
     type: String,
     required: false

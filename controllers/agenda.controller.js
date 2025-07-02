@@ -170,37 +170,3 @@ module.exports = {
     obtenerAgendas1
 }
 
-
-/**
- * const actualizarKmRecorridoSemana = async (req, res) => {
-    try {
-      const resumen = await Agenda.aggregate([
-        {
-          $group: {
-            _id: { coordinador: "$coordinador", semana: "$semana" },
-            totalKm: { $sum: "$kmRecorrido" }
-          }
-        }
-      ]);
-  
-      for (const grupo of resumen) {
-        await Agenda.updateMany(
-          {
-            coordinador: grupo._id.coordinador,
-            semana: grupo._id.semana
-          },
-          {
-            $set: { kmRecorridoSemana: grupo.totalKm }
-          }
-        );
-      }
-  
-      res.json({ mensaje: 'Kilómetros por semana actualizados correctamente' });
-    } catch (error) {
-      console.error("Error al actualizar los km recorridos por semana:", error);
-      res.status(500).json({ mensaje: 'Error al actualizar los kilómetros' });
-    }
-  };
-  
- * 
- */
