@@ -14,71 +14,69 @@ const obtenerBauchers = async (req, res) => {
   }
 };
 
-// Crear múltiples bauchers
+// Crear un nuevo baucher
 const crearBaucher = async (req, res) => {
   try {
-    const bauchers = req.body;
+    const {
+      coordinacion,
+      ejecutiva,
+      coordinador,
+      fechaBaucher,
+      fechaReporte,
+      grupo,
+      concepto,
+      titular
+    } = req.body;
 
-    if (!Array.isArray(bauchers) || bauchers.length === 0) {
-      return res.status(400).json({ mensaje: 'Se requiere un arreglo de vouchers' });
+    // Validación mínima requerida
+    if (!fechaReporte) {
+      return res.status(400).json({ mensaje: 'El campo fechaReporte es obligatorio' });
     }
 
     const calcularDiasDiferencia = (fecha1, fecha2) => {
       if (!fecha1 || !fecha2) return null;
+
       const f1 = new Date(fecha1);
       const f2 = new Date(fecha2);
+
+      // Eliminar la parte de la hora (convertir a medianoche)
       f1.setHours(0, 0, 0, 0);
       f2.setHours(0, 0, 0, 0);
+
       const diffTime = f1 - f2;
-      return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      return Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
     };
 
-    const bauchersCreados = [];
 
-    for (const baucherData of bauchers) {
-      const {
-        coordinacion,
-        ejecutiva,
-        coordinador,
-        fechaBaucher,
-        fechaReporte,
-        grupo,
-        concepto,
-        titular
-      } = baucherData;
+    // Crear instancia del nuevo baucher
+    const nuevoBaucher = new Baucher({
+      coordinacion: coordinacion || '',
+      ejecutiva: ejecutiva || '',
+      coordinador: coordinador || '',
+      fechaBaucher: fechaBaucher ? new Date(fechaBaucher) : null,
+      fechaReporte: new Date(fechaReporte),
+      grupo: grupo || '',
+      concepto: concepto || '',
+      titular: titular || '',
+      diasDiferencia: calcularDiasDiferencia(fechaReporte, fechaBaucher),
+      fechaCreacion: new Date() // ← aquí agregas la fecha y hora actual
 
-      if (!fechaReporte) {
-        return res.status(400).json({ mensaje: 'Todos los vouchers deben tener fechaReporte' });
-      }
+    });
 
-      const nuevoBaucher = new Baucher({
-        coordinacion: coordinacion || '',
-        ejecutiva: ejecutiva || '',
-        coordinador: coordinador || '',
-        fechaBaucher: fechaBaucher ? new Date(fechaBaucher) : null,
-        fechaReporte: new Date(fechaReporte),
-        grupo: grupo || '',
-        concepto: concepto || '',
-        titular: titular || '',
-        diasDiferencia: calcularDiasDiferencia(fechaReporte, fechaBaucher),
-        fechaCreacion: new Date()
-      });
-
-      await nuevoBaucher.save();
-      bauchersCreados.push(nuevoBaucher);
-    }
+    // Guardar en base de datos
+    await nuevoBaucher.save();
 
     res.status(201).json({
-      mensaje: `${bauchersCreados.length} bauchers guardados correctamente`,
-      bauchers: bauchersCreados
+      mensaje: 'Baucher guardado correctamente',
+      baucher: nuevoBaucher
     });
 
   } catch (error) {
-    console.error('Error al guardar los bauchers:', error);
-    res.status(500).json({ mensaje: 'Error al guardar los bauchers' });
+    console.error('Error al guardar el Baucher:', error);
+    console.log('REQ BODY:', req.body);
+    res.status(500).json({ mensaje: 'Error al guardar el Baucher' });
   }
 };
-
 
 // Actualizar baucher
 const actualizarBaucher = async (req, res) =>{
