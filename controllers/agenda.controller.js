@@ -1,54 +1,26 @@
 const Agenda = require ('../models/Agenda');
-const Domicilio = require('../models/Domicilio'); 
 
 
   const registrarAgenda = async (req, res) => {
     try {
-      const { domicilio, ...datosAgenda } = req.body;
+      const { ...datosAgenda } = req.body;
 
-      let domicilioGuardado = null;
-
-      if (domicilio) {
-        // Buscar si ya existe un domicilio con ese nombre
-        domicilioGuardado = await Domicilio.findOne({ nombre: domicilio });
-
-        // Si no existe, lo crea
-        if (!domicilioGuardado) {
-          const nuevoDomicilio = new Domicilio({ nombre: domicilio });
-          domicilioGuardado = await nuevoDomicilio.save();
-        }
-      } else {
-        // Si no se envía domicilio, usar "SIN AGENDAR"
-        domicilioGuardado = await Domicilio.findOne({ nombre: 'SIN AGENDAR' });
-      }
 
       const nuevaAgenda = new Agenda({
-        ...datosAgenda,
-        domicilio: domicilioGuardado ? domicilioGuardado._id : undefined
+        ...datosAgenda
       });
 
       const agendaGuardada = await nuevaAgenda.save();
 
       res.status(201).json({
-        mensaje: 'Agenda y domicilio registrados correctamente',
+        mensaje: 'Agenda registrada correctamente',
         agenda: agendaGuardada,
-        domicilio: domicilioGuardado
       });
 
     } catch (error) {
       console.error('Error al crear agenda y domicilio:', error);
       res.status(500).json({ mensaje: 'Hubo un error al crear la agenda y domicilio' });
     }
-  };
-
-  const obtenerDomicilios = async (req, res) => {
-  try {
-    const domicilios = await Domicilio.find().sort({ nombre: 1 }); // opcional: ordena alfabéticamente
-    res.status(200).json(domicilios);
-  } catch (error) {
-    console.error('Error al obtener domicilios:', error);
-    res.status(500).json({ mensaje: 'Hubo un error al obtener los domicilios' });
-  }
   };
 
   // Controlador para obtener todas las agendas
@@ -78,7 +50,6 @@ const Domicilio = require('../models/Domicilio');
 
       const [agendas, total] = await Promise.all([
         Agenda.find({}, projection)
-          .populate('domicilio', 'nombre')
           .sort({ fecha: 1, hora: 1 })
           .skip(skip)
           .limit(limit)
@@ -103,7 +74,6 @@ const Domicilio = require('../models/Domicilio');
   const obtenerAgenda = async (req, res) => {
     try {
       const agendas = await Agenda.find()
-        .populate('domicilio')
         .sort({ fecha: 1, hora: 1 }); // fecha descendente, luego hora descendente
 
       res.status(200).json(agendas);
@@ -165,7 +135,6 @@ module.exports = {
     registrarAgenda,
     obtenerAgenda,
     actualizarAgenda,
-    obtenerDomicilios,
     eliminarAgenda,
     obtenerAgendas1
 }
