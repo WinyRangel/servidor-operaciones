@@ -71,6 +71,10 @@ const AgendaSchema = new mongoose.Schema({
   cumplimientoAgenda: { 
     type: Boolean,
     required: false
+  },
+ acordeObjetivo: { 
+    type: Boolean,
+    required: false
   }
 });
 
