@@ -27,20 +27,23 @@ const AgendaSchema = new mongoose.Schema({
   }, 
   domicilio: {
     type: String,
-    required: false
-
+    required: false,
+    default: ''
   },
   actividad: {
     type: String,
-    required: false
+    required: false,
+    default: ''
   },
   codigo: {
     type: String,
-    required: false
+    required: false,
+    default: ''
   },
   codigoReportado: {
   type: String,
-  required: false
+  required: false,
+  default: ''
 },
   actividadReportada: {
     type: String,
@@ -60,6 +63,7 @@ const AgendaSchema = new mongoose.Schema({
   },
   traslado: {
     type: String,
+    default: 'NO',
     enum: ['SI', 'NO'],
     required: false
   },
@@ -69,11 +73,13 @@ const AgendaSchema = new mongoose.Schema({
   },
   cumplimientoAgenda: { 
     type: Boolean,
-    required: false
+    required: false,
+    default: false
   },
  acordeObjetivo: { 
     type: Boolean,
-    required: false
+    required: false,
+    default: false
   }
 });
 
