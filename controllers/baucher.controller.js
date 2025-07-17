@@ -81,7 +81,7 @@ const crearBaucher = async (req, res) => {
 // Actualizar baucher
 const actualizarBaucher = async (req, res) =>{
   try {
-    const {coordinacion, ejecutiva, coordinador, fechaBaucher, fechaReporte, grupo, concepto, titular} = req.body;
+    const {coordinacion, ejecutiva, coordinador, fechaBaucher, fechaReporte, grupo, concepto, titular, diasDiferencia} = req.body;
     let rbaucher = await Baucher.findById(req.params.id);
     if(!rbaucher){
       res.status(404).json({msg: 'No existe'})
@@ -95,6 +95,7 @@ const actualizarBaucher = async (req, res) =>{
     rbaucher.grupo = grupo;
     rbaucher.concepto = concepto;
     rbaucher.titular = titular;
+    rbaucher.diasDiferencia = diasDiferencia;
 
     rbaucher = await Baucher.findOneAndUpdate({_id: req.params.id}, rbaucher, {new: true})
     res.json(rbaucher);
