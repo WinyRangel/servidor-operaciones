@@ -4,7 +4,7 @@ const Baucher = require('../models/Baucher');
 const obtenerBauchers = async (req, res) => {
   try {
     const bauchers = await Baucher.find()
-      .populate('coordinacion') // Solo traer el campo 'coordinacion' de la colección Coordinacion
+      .populate('coordinacion', 'nombre') // Solo traer el campo 'coordinacion' de la colección Coordinacion
       .sort({ fechaCreacion: -1 });
 
     res.status(200).json(bauchers);
