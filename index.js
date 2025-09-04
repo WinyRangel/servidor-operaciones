@@ -15,7 +15,7 @@ conectarDB();
 
 // Middleware
 app.use(cors({
-  origin: 'https://supervisor-operacion.web.app/', // url frontend
+  origin: 'https://supervisor-operacion.web.app', // tu frontend
   credentials: true
 }));
 app.use(express.json());
