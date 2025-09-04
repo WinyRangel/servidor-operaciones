@@ -80,6 +80,10 @@ const AgendaSchema = new mongoose.Schema({
     type: Boolean,
     required: false,
     default: false
+  },
+  resultado: { 
+    type: String,
+    required: false,
   }
 });
 

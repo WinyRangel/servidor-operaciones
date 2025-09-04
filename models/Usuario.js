@@ -11,7 +11,7 @@ const usuarioSchema = new mongoose.Schema({
  }, 
   rol: {
     type: String,
-    required: true,
+    requiered: true,
     enum:['sup', 'admin', 'coordinador']
   }
 

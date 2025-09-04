@@ -21,10 +21,8 @@ const Agenda = require ('../models/Agenda');
       res.status(500).json({ mensaje: 'Hubo un error al crear la agenda y domicilio' });
     }
   };
-
   // contralador para guardar agendas importadas
   const importarAgenda = async(req, res) => {
-
   }
   // Controlador para obtener todas las agendas
   const obtenerAgendas1 = async (req, res) => {
@@ -74,7 +72,7 @@ const Agenda = require ('../models/Agenda');
     }
   };
 
-  // Controlador para obtener todos los bauchers
+  // Controlador para obtener todas las agendas
   const obtenerAgenda = async (req, res) => {
     try {
       const agendas = await Agenda.find()
@@ -92,11 +90,11 @@ const Agenda = require ('../models/Agenda');
 
       try {
           const { id } = req.params;
-          const { fecha, hora, domicilio, codigo, codigoReportado, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido, acordeObjetivo } = req.body;
+          const { fecha, hora, domicilio, codigo, codigoReportado, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido, acordeObjetivo, resultado } = req.body;
 
           const agendaActualizada = await Agenda.findByIdAndUpdate(
               id,
-              { fecha, hora, domicilio, codigo, codigoReportado, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido, acordeObjetivo },
+              { fecha, hora, domicilio, codigo, codigoReportado, actividadReportada, reportado, horaReporte, horaCierre, cumplimientoAgenda, kmRecorrido, acordeObjetivo, resultado },
               { new: true }
           );
 
@@ -132,11 +130,33 @@ const Agenda = require ('../models/Agenda');
     }
   };
 
+  //cops
+
+  const obtenerAgendas = async (req, res) => {
+    try {
+      let agendas;
+
+      if (req.user.rol === 'coordinador') {
+        // Filtrar solo las del coordinador logueado
+        agendas = await Agenda.find({ coordinador: req.user.usuario });
+      } else {
+        // admin y sup ven todo
+        agendas = await Agenda.find();
+      }
+
+      res.status(200).json(agendas);
+    } catch (error) {
+      res.status(500).json({ mensaje: 'Error al obtener agendas', error });
+    }
+  };
+
+
 module.exports = {
     registrarAgenda,
     obtenerAgenda,
     actualizarAgenda,
     eliminarAgenda,
     obtenerAgendas1,
-    importarAgenda
+    importarAgenda,
+    obtenerAgendas
 }
