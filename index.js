@@ -13,11 +13,18 @@ const app = express();
 // Conectamos a la BD
 conectarDB();
 
-// Middleware
+// para localhost y producción
+const allowedOrigins = [
+  //'http://localhost:4200',
+  'https://supervisor-operacion.web.app'
+];
+
 app.use(cors({
   origin: 'https://supervisor-operacion.web.app', // tu frontend
   credentials: true
 }));
+//https://supervisor-operacion.web.app
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -30,13 +37,9 @@ app.use('/', require('./routes/ejecutivas.routes'));
 app.use('/', require('./routes/depositos.routes'));
 app.use('/api/proyecciones', require('./routes/proyeccion.routes'));
 app.use('/', require('./routes/creditos.routes'));
+app.use('/fichas', require('./routes/fichas.routes'));
 app.use('/', require('./routes/auth.routes'));
 app.use('/api', require('./routes/seguimiento.routes'));
-
-
-
-
-
 
 // Inicializar domicilio por defecto
 const inicializarDomicilioPorDefecto = async () => {
@@ -56,5 +59,5 @@ const inicializarDomicilioPorDefecto = async () => {
 // Iniciar servidor
 app.listen(4000, async () => {
   console.log('El servidor está corriendo perfectamente en el puerto 4000!');
-  await inicializarDomicilioPorDefecto(); // Llamamos la función aquí
+  await inicializarDomicilioPorDefecto();
 });

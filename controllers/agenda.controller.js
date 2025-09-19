@@ -44,6 +44,7 @@ const Agenda = require ('../models/Agenda');
         reportado: 1,
         horaReporte: 1,
         horaCierre: 1,
+        traslado: 1,
         kmRecorrido: 1,
         cumplimientoAgenda: 1,
         domicilio: 1,
