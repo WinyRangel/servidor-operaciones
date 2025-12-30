@@ -20,7 +20,7 @@ conectarDB();
 // ];
 
 app.use(cors({
-  origin: 'http://localhost:4200', // tu frontend
+  origin: 'https://supervisor-operacion.web.app', // tu frontend
   credentials: true
 }));
 //https://supervisor-operacion.web.app
