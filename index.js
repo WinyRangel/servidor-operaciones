@@ -5,7 +5,7 @@ const conectarDB = require('./config/db');
 const cors = require("cors");
 
 // Importar el modelo Domicilio
-const Domicilio = require('./models/Domicilio'); 
+const Domicilio = require('./models/Domicilio');
 
 // Creamos el servidor
 const app = express();
@@ -14,13 +14,13 @@ const app = express();
 conectarDB();
 
 // para localhost y producción
-const allowedOrigins = [
-  //'http://localhost:4200',
-  'https://supervisor-operacion.web.app'
-];
+// const allowedOrigins = [
+//   'http://localhost:4200',
+//   'https://supervisor-operacion.web.app'
+// ];
 
 app.use(cors({
-  origin: 'https://supervisor-operacion.web.app', // tu frontend
+  origin: 'http://localhost:4200', // tu frontend
   credentials: true
 }));
 //https://supervisor-operacion.web.app
@@ -40,6 +40,7 @@ app.use('/', require('./routes/creditos.routes'));
 app.use('/fichas', require('./routes/fichas.routes'));
 app.use('/', require('./routes/auth.routes'));
 app.use('/api', require('./routes/seguimiento.routes'));
+app.use('/agenda-asesor', require('./routes/agenda.asesor.routes'));
 
 // Inicializar domicilio por defecto
 const inicializarDomicilioPorDefecto = async () => {
