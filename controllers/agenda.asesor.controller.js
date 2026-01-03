@@ -1,41 +1,55 @@
 const AgendaAsesor = require('../models/AgendaAsesor');
+const Usuario = require('../models/Usuario');
 
 // -------------------------------------------------------------
-// Crear agenda
+// Crear agenda 
 // -------------------------------------------------------------
 const crearAgenda = async (req, res) => {
   try {
-    const user = req.user; // viene del middleware
+    const user = req.user;
 
-    // Datos enviados desde el frontend
-    const data = req.body;
+    const {
+      semana,
+      fecha,
+      objetivo,
+      hora,
+      domicilio,
+      actividad,
+      codigo,
+      acordeObjetivo
+    } = req.body;
 
-    // Sobrescribir forzosamente con el usuario logueado
-    data.asesor = user.usuario; // nombre del asesor
-    data.coordinacion = user.coordinacion; // id de la coordinación
+    const nuevaAgenda = new AgendaAsesor({
+      asesor: user.usuario,
+      coordinacion: user.coordinacion,
+      semana,
+      fecha,
+      objetivo,
+      hora,
+      domicilio,
+      actividad,
+      codigo,
+      acordeObjetivo
+    });
 
-    // Si traes evidencia por multer
-    if (req.file) {
-      data.evidencia = req.file.path;
-    }
-
-    const nuevaAgenda = new AgendaAsesor(data);
     await nuevaAgenda.save();
 
     res.status(201).json({
       ok: true,
-      msg: "Agenda guardada correctamente",
+      msg: 'Actividad registrada correctamente',
       agenda: nuevaAgenda
     });
 
   } catch (error) {
-    console.log(error);
+    console.error(error);
     res.status(500).json({
       ok: false,
-      msg: 'Error al guardar agenda'
+      msg: 'Error al registrar la actividad'
     });
   }
 };
+
+
 // -------------------------------------------------------------
 // Obtener todas las agendas
 // -------------------------------------------------------------
@@ -113,58 +127,118 @@ const actualizarAgenda = async (req, res) => {
     const user = req.user;
     const data = req.body;
 
-    // Obtener agenda
     const agenda = await AgendaAsesor.findById(id);
 
+    if (!agenda) {
+      return res.status(404).json({ ok: false, msg: 'Agenda no encontrada' });
+    }
+
+    // -----------------------------
+    // ASESOR
+    // -----------------------------
+    if (user.rol === 'asesor') {
+      if (agenda.asesor !== user.usuario) {
+        return res.status(403).json({
+          ok: false,
+          msg: 'No puedes modificar agendas de otro asesor'
+        });
+      }
+
+      // SOLO puede actualizar resultado y evidencia
+      const allowedFields = ['resultado'];
+      const updateData = {};
+
+      allowedFields.forEach(field => {
+        if (data[field] !== undefined) {
+          updateData[field] = data[field];
+        }
+      });
+
+      if (req.file) {
+        updateData.evidencia = req.file.path;
+      }
+
+      const updated = await AgendaAsesor.findByIdAndUpdate(id, updateData, { new: true });
+
+      return res.json({
+        ok: true,
+        msg: 'Agenda actualizada correctamente',
+        agenda: updated
+      });
+    }
+
+    // -----------------------------
+    // COORDINADOR
+    // -----------------------------
+    if (user.rol === 'coordinador') {
+      if (agenda.coordinacion !== user.coordinacion) {
+        return res.status(403).json({
+          ok: false,
+          msg: 'No puedes modificar agendas de otra coordinación'
+        });
+      }
+
+      const updateData = {};
+
+      if (data.validada !== undefined) {
+        updateData.validada = data.validada;
+        updateData.validadaPor = user.usuario;
+      }
+
+      if (data.resultado !== undefined) {
+        updateData.resultado = data.resultado;
+      }
+
+      const updated = await AgendaAsesor.findByIdAndUpdate(id, updateData, { new: true });
+
+      return res.json({
+        ok: true,
+        msg: 'Agenda validada correctamente',
+        agenda: updated
+      });
+    }
+
+    res.status(403).json({ ok: false, msg: 'Rol no autorizado' });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ ok: false, msg: 'Error al actualizar agenda' });
+  }
+};
+
+const validarAgenda = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user;
+
+    const agenda = await AgendaAsesor.findById(id);
     if (!agenda) {
       return res.status(404).json({ ok: false, msg: "Agenda no encontrada" });
     }
 
-    // REGLAS DE PERMISOS
-    if (user.rol === "asesor") {
-      // El asesor solo actualiza SU agenda
-      if (agenda.asesor !== user.usuario) {
-        return res.status(403).json({
-          ok: false,
-          msg: "No puedes modificar la agenda de otro asesor"
-        });
-      }
-
-      // Bloquear campos que solo el coordinador puede actualizar
-      delete data.validada;
-      delete data.validadaPor;
-
-    } else if (user.rol === "coordinador") {
-      // Puede actualizar solo agendas de su coordinación
+    // REGLAS
+    if (user.rol === "coordinador") {
       if (agenda.coordinacion !== user.coordinacion) {
-        return res.status(403).json({
-          ok: false,
-          msg: "No puedes modificar agendas de otra coordinación"
-        });
-      }
-
-      // Si valida/rechaza, asigna quién la validó
-      if (data.validada !== undefined) {
-        data.validadaPor = user.usuario;
+        return res.status(403).json({ ok: false, msg: "No puedes validar agendas de otra coordinación" });
       }
     }
 
-    // Si se subió evidencia nueva
-    if (req.file) {
-      data.evidencia = req.file.path;
-    }
+    const updateData = {
+      validada: true,
+      validadaPor: user.usuario
+    };
 
-    const updated = await AgendaAsesor.findByIdAndUpdate(id, data, { new: true });
+    const updated = await AgendaAsesor.findByIdAndUpdate(id, updateData, { new: true });
 
-    res.json({
+    return res.json({
       ok: true,
-      msg: "Agenda actualizada correctamente",
+      msg: 'Agenda validada correctamente',
       agenda: updated
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ ok: false, msg: "Error al actualizar agenda" });
+    res.status(500).json({ ok: false, msg: 'Error al validar agenda' });
   }
 };
 
@@ -205,10 +279,44 @@ const eliminarAgenda = async (req, res) => {
   }
 };
 
+const obtenerAsesoresPorCoordinacion = async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (user.rol !== 'coordinador') {
+      return res.status(403).json({
+        ok: false,
+        msg: 'No autorizado'
+      });
+    }
+
+    const asesores = await Usuario.find({
+      rol: 'asesor',
+      coordinacion: user.coordinacion
+    }).select('usuario coordinacion');
+
+    res.json({
+      ok: true,
+      asesores
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      ok: false,
+      msg: 'Error al obtener asesores'
+    });
+  }
+};
+
+
+
 module.exports = {
   crearAgenda,
   obtenerAgendas,
   obtenerAgendasCoordinador,
   actualizarAgenda,
-  eliminarAgenda
+  eliminarAgenda,
+  obtenerAsesoresPorCoordinacion,
+  validarAgenda
 };
