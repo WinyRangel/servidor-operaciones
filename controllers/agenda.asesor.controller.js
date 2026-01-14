@@ -62,12 +62,12 @@ const obtenerAgendas = async (req, res) => {
     // Si es asesor → solo su agenda
     if (user.rol === "asesor") {
       agendas = await AgendaAsesor.find({ asesor: user.usuario })
-        .sort({ fecha: -1 });
+        .sort({ fecha: 1, hora: 1 });
 
       // Si es coordinador → todas las agendas de su coordinación
     } else if (user.rol === "coordinador") {
       agendas = await AgendaAsesor.find({ coordinacion: user.coordinacion })
-        .sort({ fecha: -1 });
+        .sort({ fecha: 1, hora: 1 });
 
     } else {
       return res.status(403).json({
@@ -104,7 +104,7 @@ const obtenerAgendasCoordinador = async (req, res) => {
 
     const agendas = await AgendaAsesor.find({
       coordinacion: user.coordinacion
-    }).sort({ fecha: -1 });
+    }).sort({ fecha: 1 });
 
     res.json({
       ok: true,
@@ -145,7 +145,7 @@ const actualizarAgenda = async (req, res) => {
       }
 
       // SOLO puede actualizar resultado y evidencia
-      const allowedFields = ['resultado'];
+      const allowedFields = ['fecha', 'hora', 'domicilio', 'actividad', 'codigo', 'resultado'];
       const updateData = {};
 
       allowedFields.forEach(field => {
@@ -156,6 +156,13 @@ const actualizarAgenda = async (req, res) => {
 
       if (req.file) {
         updateData.evidencia = req.file.path;
+      }
+
+      // Si estaba rechazada, al actualizar vuelve a pendiente para que el coordinador valide
+      if (agenda.validada === 'RECHAZADA') {
+        updateData.validada = 'PENDIENTE';
+        updateData.validadaPor = null;
+        updateData.motivoRechazo = '';
       }
 
       const updated = await AgendaAsesor.findByIdAndUpdate(id, updateData, { new: true });
@@ -213,34 +220,51 @@ const validarAgenda = async (req, res) => {
 
     const agenda = await AgendaAsesor.findById(id);
     if (!agenda) {
-      return res.status(404).json({ ok: false, msg: "Agenda no encontrada" });
+      return res.status(404).json({
+        ok: false,
+        msg: "Agenda no encontrada"
+      });
     }
 
-    // REGLAS
-    if (user.rol === "coordinador") {
-      if (agenda.coordinacion !== user.coordinacion) {
-        return res.status(403).json({ ok: false, msg: "No puedes validar agendas de otra coordinación" });
-      }
+    // 🔒 Regla de coordinación
+    if (
+      user.rol === "coordinador" &&
+      agenda.coordinacion !== user.coordinacion
+    ) {
+      return res.status(403).json({
+        ok: false,
+        msg: "No puedes validar agendas de otra coordinación"
+      });
     }
 
-    const updateData = {
-      validada: true,
-      validadaPor: user.usuario
-    };
+    // 🚫 Evitar doble validación
+    if (agenda.validada === 'VALIDADA') {
+      return res.status(400).json({
+        ok: false,
+        msg: "La agenda ya fue validada"
+      });
+    }
 
-    const updated = await AgendaAsesor.findByIdAndUpdate(id, updateData, { new: true });
+    agenda.validada = 'VALIDADA';
+    agenda.validadaPor = user.usuario;
+
+    await agenda.save();
 
     return res.json({
       ok: true,
       msg: 'Agenda validada correctamente',
-      agenda: updated
+      agenda
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ ok: false, msg: 'Error al validar agenda' });
+    res.status(500).json({
+      ok: false,
+      msg: 'Error al validar agenda'
+    });
   }
 };
+
 
 // -------------------------------------------------------------
 // Eliminar agenda
@@ -309,7 +333,57 @@ const obtenerAsesoresPorCoordinacion = async (req, res) => {
   }
 };
 
+const rechazarAgenda = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { motivoRechazo } = req.body;
+    const user = req.user;
 
+    if (!motivoRechazo || motivoRechazo.trim() === '') {
+      return res.status(400).json({
+        ok: false,
+        msg: 'Debes indicar el motivo del rechazo'
+      });
+    }
+
+    const agenda = await AgendaAsesor.findById(id);
+    if (!agenda) {
+      return res.status(404).json({
+        ok: false,
+        msg: "Agenda no encontrada"
+      });
+    }
+
+    if (
+      user.rol === "coordinador" &&
+      agenda.coordinacion !== user.coordinacion
+    ) {
+      return res.status(403).json({
+        ok: false,
+        msg: "No puedes rechazar agendas de otra coordinación"
+      });
+    }
+
+    agenda.validada = 'RECHAZADA';
+    agenda.motivoRechazo = motivoRechazo;
+    agenda.validadaPor = user.usuario;
+
+    await agenda.save();
+
+    return res.json({
+      ok: true,
+      msg: 'Agenda rechazada',
+      agenda
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      ok: false,
+      msg: 'Error al rechazar agenda'
+    });
+  }
+};
 
 module.exports = {
   crearAgenda,
@@ -318,5 +392,6 @@ module.exports = {
   actualizarAgenda,
   eliminarAgenda,
   obtenerAsesoresPorCoordinacion,
-  validarAgenda
+  validarAgenda,
+  rechazarAgenda
 };

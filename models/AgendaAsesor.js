@@ -19,7 +19,12 @@ const AgendaAsesorSchema = new mongoose.Schema({
 
   // Campos adicionales
   resultado: { type: String, trim: true },
-  validada: { type: Boolean, default: false },
+  validada: {
+    type: String,
+    enum: ['PENDIENTE', 'VALIDADA', 'RECHAZADA'],
+    default: 'PENDIENTE'
+  },
+  motivoRechazo: { type: String, default: '' },
   validadaPor: { type: String, default: null },
   evidencia: {
     type: String,
