@@ -51,7 +51,7 @@ exports.iniciarSesion = async (req, res) => {
     const token = jwt.sign(
       { id: usuarioEncontrado._id, usuario: usuarioEncontrado.usuario, rol: usuarioEncontrado.rol, coordinacion: usuarioEncontrado.coordinacion || null },
       SECRET_KEY,
-      { expiresIn: '365d' }
+      { expiresIn: '15d' }
     );
 
 

@@ -24,12 +24,65 @@ const Agenda = require ('../models/Agenda');
   // contralador para guardar agendas importadas
   const importarAgenda = async(req, res) => {
   }
-  // Controlador para obtener todas las agendas
+  // Controlador para obtener todas las agendas paginadas y filtradas
   const obtenerAgendas1 = async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 315;
       const skip = (page - 1) * limit;
+
+      // Construir objeto de búsqueda basado en los filtros
+      const query = {};
+
+      if (req.query.coordinador) {
+        // Búsqueda insensible a mayúsculas/minúsculas
+        query.coordinador = new RegExp(req.query.coordinador, 'i');
+      }
+
+      if (req.query.semana) {
+        query.semana = req.query.semana;
+      }
+
+      if (req.query.codigo) {
+        query.codigo = req.query.codigo;
+      }
+
+      if (req.query.codigoReportado) {
+        query.codigoReportado = req.query.codigoReportado;
+      }
+
+      if (req.query.estado) {
+        if (req.query.estado === 'reportado') {
+          query.reportado = true;
+        } else if (req.query.estado === 'no reportado') {
+          query.reportado = false;
+        }
+      }
+
+      // Filtro por rango de fechas
+      if (req.query.fechaInicio || req.query.fechaFin) {
+        query.fecha = {};
+        if (req.query.fechaInicio) {
+          query.fecha.$gte = new Date(req.query.fechaInicio);
+        }
+        if (req.query.fechaFin) {
+          // Para incluir todo el día de la fecha fin, sumamos un día o comparamos hasta el final
+          const fFin = new Date(req.query.fechaFin);
+          fFin.setUTCHours(23, 59, 59, 999);
+          query.fecha.$lte = fFin;
+        }
+      }
+
+      if (req.query.mes) {
+        const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const mesIndex = meses.indexOf(req.query.mes.toLowerCase()) + 1;
+        if (mesIndex > 0) {
+          query.$expr = { $eq: [{ $month: "$fecha" }, mesIndex] };
+        }
+      }
+
+      // TODO: Filtros de dia requerirían agregaciones complejas con $dayOfWeek 
+      // si se envían como strings en español, por ahora ese se sigue filtrando en el frontend.
 
       const projection = {
         _id: 1,
@@ -52,13 +105,13 @@ const Agenda = require ('../models/Agenda');
       };
 
       const [agendas, total] = await Promise.all([
-        Agenda.find({}, projection)
+        Agenda.find(query, projection)
           .sort({ fecha: 1, hora: 1 })
           .skip(skip)
           .limit(limit)
           .lean(),
           
-        Agenda.countDocuments()
+        Agenda.countDocuments(query)
       ]);
 
       res.status(200).json({
