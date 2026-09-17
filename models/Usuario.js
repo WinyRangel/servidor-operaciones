@@ -12,13 +12,17 @@ const usuarioSchema = new mongoose.Schema({
   rol: {
     type: String,
     required: true,
-    enum: ['sup', 'admin', 'coordinador', 'asesor']
+    enum: ['sup', 'admin', 'coordinador', 'asesor', 'auditoria', 'mercadotecnia', 'rh']
   },
   coordinacion: {
     type: String,
     required: function () {
       return this.rol === 'coordinador' || this.rol === 'asesor';
     }
+  },
+  nombre: {
+    type: String,
+    required: false
   }
 });
 

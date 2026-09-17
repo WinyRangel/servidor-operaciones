@@ -49,16 +49,22 @@ exports.iniciarSesion = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: usuarioEncontrado._id, usuario: usuarioEncontrado.usuario, rol: usuarioEncontrado.rol, coordinacion: usuarioEncontrado.coordinacion || null },
+      {
+        id: usuarioEncontrado._id,
+        usuario: usuarioEncontrado.usuario,
+        nombre: usuarioEncontrado.nombre || null,
+        rol: usuarioEncontrado.rol,
+        coordinacion: usuarioEncontrado.coordinacion || null
+      },
       SECRET_KEY,
       { expiresIn: '15d' }
     );
-
 
     res.status(200).json({
       mensaje: 'Inicio de sesión exitoso',
       token,
       usuario: usuarioEncontrado.usuario,
+      nombre: usuarioEncontrado.nombre || null,
       rol: usuarioEncontrado.rol,
       coordinacion: usuarioEncontrado.coordinacion || null
     });
