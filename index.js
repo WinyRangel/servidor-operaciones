@@ -14,7 +14,7 @@ conectarDB();
 // ];
 
 app.use(cors({
-  origin: ['https://supervisor-operacion.web.app', 'http://localhost:4200'], // tu  frontend producccion https://supervisor-operacion.web.app
+  origin: ['https://supervisor-operacion.web.app', 'http://localhost:4200', 'https://sistema-agendas-vam.web.app'], // tu  frontend producccion https://supervisor-operacion.web.app
   credentials: true
 }));
 //https://supervisor-operacion.web.app
