@@ -139,24 +139,40 @@ exports.obtenerAgendasAdmin = async (req, res) => {
         const { usuario, rol, semana, fecha } = req.query;
 
         const filtro = {};
-
-        // Filtro por usuario específico
-        if (usuario) {
-            filtro.usuario = new RegExp(`^${usuario}$`, 'i');
-        }
-
-        // Filtro por rol específico
-        if (rol) {
-            filtro.rol = rol.toLowerCase().trim();
-        }
-
-        // Si el usuario que consulta es mercadotecnia, auditoria o rh (y no es admin/sup)
-        // y no se filtró expresamente por otro rol/usuario, restringir a sus registros o a su rol
         const rolConsultante = (userRol || '').toLowerCase().trim();
-        if (['mercadotecnia', 'auditoria', 'rh'].includes(rolConsultante)) {
-            if (!filtro.rol && !filtro.usuario) {
-                // Por defecto muestra las agendas de su mismo rol/departamento
+        const esAdminOSup = ['admin', 'sup'].includes(rolConsultante);
+
+        // Si no es admin ni supervisor, forzar restricción a su propio usuario
+        if (!esAdminOSup && userNombre) {
+            let nombreUsuario = userNombre;
+            try {
+                const uDoc = await Usuario.findOne({ usuario: new RegExp(`^${userNombre}$`, 'i') }).lean();
+                if (uDoc && uDoc.nombre) {
+                    nombreUsuario = uDoc.nombre;
+                }
+            } catch (e) {
+                // Si falla consulta a Usuario, continuar
+            }
+
+            filtro.$or = [
+                { usuario: new RegExp(`^${userNombre}$`, 'i') },
+                { nombre: new RegExp(`^${userNombre}$`, 'i') },
+                { nombre: new RegExp(`^${nombreUsuario}$`, 'i') }
+            ];
+
+            if (rolConsultante) {
                 filtro.rol = rolConsultante;
+            }
+        } else {
+            // Admin o Supervisor: pueden ver todo o filtrar por usuario/rol específico
+            if (usuario) {
+                filtro.$or = [
+                    { usuario: new RegExp(`^${usuario}$`, 'i') },
+                    { nombre: new RegExp(`^${usuario}$`, 'i') }
+                ];
+            }
+            if (rol) {
+                filtro.rol = rol.toLowerCase().trim();
             }
         }
 
@@ -324,7 +340,11 @@ exports.enviarResumenAgenda = async (req, res) => {
 // =========================================================================
 exports.eliminarAgendaAdmin = async (req, res) => {
     try {
-        const agenda = await AgendaAdmin.findByIdAndDelete(req.params.id);
+        const { usuario: userNombre, rol: userRol } = obtenerUsuarioYRol(req);
+        const rolConsultante = (userRol || '').toLowerCase().trim();
+        const esAdminOSup = ['admin', 'sup'].includes(rolConsultante);
+
+        const agenda = await AgendaAdmin.findById(req.params.id);
 
         if (!agenda) {
             return res.status(404).json({
@@ -332,6 +352,21 @@ exports.eliminarAgendaAdmin = async (req, res) => {
                 message: 'Agenda no encontrada'
             });
         }
+
+        // Si no es admin ni supervisión, validar que la agenda pertenezca al usuario
+        if (!esAdminOSup && userNombre) {
+            const uOwner = (agenda.usuario || '').toLowerCase();
+            const nOwner = (agenda.nombre || '').toLowerCase();
+            const uActual = userNombre.toLowerCase();
+            if (uOwner !== uActual && nOwner !== uActual) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'No tienes autorización para eliminar la agenda de otro usuario'
+                });
+            }
+        }
+
+        await AgendaAdmin.findByIdAndDelete(req.params.id);
 
         res.status(200).json({
             success: true,
