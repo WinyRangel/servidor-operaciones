@@ -193,7 +193,7 @@ exports.obtenerAgendasAdmin = async (req, res) => {
             };
         }
 
-        const agendas = await AgendaAdmin.find(filtro).sort({ fecha: -1, hora: 1, createdAt: -1 }).lean();
+        const agendas = await AgendaAdmin.find(filtro).sort({ fecha: 1, hora: 1, createdAt: 1 }).lean();
 
         // Enriquecer registros anteriores que no tengan guardado el campo nombre
         const usuarios = await Usuario.find({}, 'usuario nombre').lean();
@@ -224,7 +224,7 @@ exports.obtenerAgendasAdmin = async (req, res) => {
 // =========================================================================
 exports.actualizarAgendaAdmin = async (req, res) => {
     try {
-        const { semana, fecha, hora, domicilio, actividad, usuario, rol } = req.body;
+        const { semana, fecha, hora, domicilio, actividad, usuario, rol, nombre } = req.body;
         const agenda = await AgendaAdmin.findById(req.params.id);
 
         if (!agenda) {
@@ -240,6 +240,7 @@ exports.actualizarAgendaAdmin = async (req, res) => {
         if (domicilio !== undefined) agenda.domicilio = domicilio;
         if (actividad !== undefined) agenda.actividad = actividad;
         if (usuario !== undefined) agenda.usuario = usuario;
+        if (nombre !== undefined) agenda.nombre = nombre;
         if (rol !== undefined) agenda.rol = rol.toLowerCase().trim();
 
         await agenda.save();
