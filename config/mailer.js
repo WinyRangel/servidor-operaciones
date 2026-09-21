@@ -22,14 +22,28 @@ const enviarNotificacionAgenda = async (agenda) => {
         return; // No aplica notificación para este rol
     }
 
-    const fechaFormateada = agenda.fecha
-        ? new Date(agenda.fecha).toLocaleDateString("es-MX", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-          })
-        : "N/A";
+    let fechaFormateada = "N/A";
+    if (agenda.fecha) {
+        const raw = typeof agenda.fecha === "string" ? agenda.fecha.substring(0, 10) : new Date(agenda.fecha).toISOString().substring(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            const [y, m, d] = raw.split("-").map(Number);
+            fechaFormateada = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toLocaleDateString("es-MX", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "America/Mexico_City",
+            });
+        } else {
+            fechaFormateada = new Date(agenda.fecha).toLocaleDateString("es-MX", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "America/Mexico_City",
+            });
+        }
+    }
 
     const rolLabel = {
         auditoria: "Auditoría",
@@ -94,9 +108,19 @@ const enviarNotificacionAgenda = async (agenda) => {
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
-    const fechaInicioFmt = new Date(fechaInicio).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" });
-    const fechaFinFmt   = new Date(fechaFin).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" });
-    const emitidoEn     = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const parseFechaMX = (f, opts) => {
+        if (!f) return "N/A";
+        const raw = typeof f === "string" ? f.substring(0, 10) : new Date(f).toISOString().substring(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            const [y, m, d] = raw.split("-").map(Number);
+            return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toLocaleDateString("es-MX", { ...opts, timeZone: "America/Mexico_City" });
+        }
+        return new Date(f).toLocaleDateString("es-MX", { ...opts, timeZone: "America/Mexico_City" });
+    };
+
+    const fechaInicioFmt = parseFechaMX(fechaInicio, { day: "2-digit", month: "long", year: "numeric" });
+    const fechaFinFmt   = parseFechaMX(fechaFin, { day: "2-digit", month: "long", year: "numeric" });
+    const emitidoEn     = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
 
     const rolLabel = {
         auditoria: "Auditoría",
@@ -105,9 +129,7 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     };
 
     const filas = agendas.map((ag, i) => {
-        const fechaFmt = ag.fecha
-            ? new Date(ag.fecha).toLocaleDateString("es-MX", { weekday: "short", year: "numeric", month: "short", day: "numeric" })
-            : "N/A";
+        const fechaFmt = parseFechaMX(ag.fecha, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
         const bgColor = i % 2 === 0 ? "#ffffff" : "#f8fafc";
         const rolNormalizado = (ag.rol || "").toLowerCase().trim();
         const rolNombre = rolLabel[rolNormalizado] || (ag.rol || "").toUpperCase();
