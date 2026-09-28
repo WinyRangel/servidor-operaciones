@@ -1,19 +1,28 @@
 const nodemailer = require("nodemailer");
 
-// El transporter se crea en el momento de enviar (no al cargar el módulo),
-// así dotenv ya habrá cargado las variables de entorno correctamente.
-const crearTransporter = () => nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,           // mail.vamosamejorar.com
-    port: parseInt(process.env.EMAIL_PORT || '465'),
-    secure: process.env.EMAIL_SECURE !== 'false', // true para puerto 465 (SSL)
-    auth: {
-        user: process.env.EMAIL_USER,       // transformacion.digital@vamosamejorar.com
-        pass: process.env.EMAIL_PASS,
-    },
-    tls: {
-        rejectUnauthorized: false           // evita errores con certificados autofirmados
-    }
-});
+const crearTransporter = () => {
+    const port = parseInt(process.env.EMAIL_PORT || '465');
+    const isSecure = process.env.EMAIL_SECURE !== undefined
+        ? (String(process.env.EMAIL_SECURE).trim().toLowerCase() === 'true')
+        : (port === 465);
+
+    return nodemailer.createTransport({
+        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        port: port,
+        secure: isSecure,
+        family: 4,           // Forzar IPv4 — evita timeouts en Render y otros clouds
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+        },
+        tls: {
+            rejectUnauthorized: false
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000
+    });
+};
 
 
 /**
