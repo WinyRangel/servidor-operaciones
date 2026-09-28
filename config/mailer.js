@@ -2,6 +2,21 @@ const dns = require('dns');
 if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
+// En entornos como Render no hay enrutamiento IPv6 saliente.
+// Neutralizar resolve6 previene que cualquier librería intente IPv6.
+if (dns.Resolver && dns.Resolver.prototype) {
+    dns.Resolver.prototype.resolve6 = function (h, o, cb) {
+        const callback = typeof o === 'function' ? o : cb;
+        if (typeof callback === 'function') callback(null, []);
+    };
+}
+if (dns.resolve6) {
+    dns.resolve6 = (h, o, cb) => {
+        const callback = typeof o === 'function' ? o : cb;
+        if (typeof callback === 'function') callback(null, []);
+    };
+}
+
 const nodemailer = require("nodemailer");
 
 /**
@@ -19,23 +34,47 @@ const obtenerEnv = (nombre, fallback = '') => {
     return fallback;
 };
 
-const crearTransporter = () => {
+/**
+ * Resuelve un nombre de host (ej. 'smtp.gmail.com') a su dirección IPv4
+ * para evitar que Node.js intente conectarse vía IPv6 en Render/AWS.
+ */
+const resolverHostIPv4 = async (hostname) => {
+    if (!hostname) return '142.250.190.108'; // IP de respaldo conocida de smtp.gmail.com
+    // Si ya es una dirección IP numérica IPv4
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+        return hostname;
+    }
+    try {
+        const addresses = await dns.promises.resolve4(hostname);
+        if (addresses && addresses.length > 0) {
+            return addresses[0];
+        }
+    } catch (err) {
+        console.warn(`[Mailer] No se pudo resolver IPv4 para ${hostname}, usando hostname directo:`, err.message);
+    }
+    return hostname;
+};
+
+const crearTransporter = async () => {
+    const rawHost = obtenerEnv('EMAIL_HOST', 'smtp.gmail.com');
     const port = parseInt(obtenerEnv('EMAIL_PORT', '465'));
     const secureVal = obtenerEnv('EMAIL_SECURE', '');
     const isSecure = secureVal !== ''
         ? (secureVal.toLowerCase() === 'true')
         : (port === 465);
 
+    const hostIPv4 = await resolverHostIPv4(rawHost);
+
     return nodemailer.createTransport({
-        host: obtenerEnv('EMAIL_HOST', 'smtp.gmail.com'),
+        host: hostIPv4,
         port: port,
         secure: isSecure,
-        family: 4,           // Forzar IPv4 — evita timeouts en Render y otros clouds
         auth: {
             user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
             pass: obtenerEnv('EMAIL_PASS'),
         },
         tls: {
+            servername: rawHost, // Vital para validar el certificado SSL con el nombre real del servidor
             rejectUnauthorized: false
         },
         connectionTimeout: 15000,
@@ -141,8 +180,9 @@ const enviarNotificacionAgenda = async (agenda) => {
         `,
     };
 
-    await crearTransporter().sendMail(mailOptions);
-    console.log(`[Mailer] Notificacion enviada a ${process.env.EMAIL_DESTINO} (rol: ${agenda.rol})`);
+    const transporter = await crearTransporter();
+    await transporter.sendMail(mailOptions);
+    console.log(`[Mailer] Notificacion enviada a ${emailDestino} (rol: ${agenda.rol})`);
 };
 
 /**
@@ -245,7 +285,8 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     };
 
     console.log(`[Mailer] 🚀 Conectando a ${obtenerEnv('EMAIL_HOST', 'smtp.gmail.com')}:${obtenerEnv('EMAIL_PORT', '465')} para enviar resumen (${agendas.length} actividades) a: ${emailDestino}...`);
-    await crearTransporter().sendMail(mailOptions);
+    const transporter = await crearTransporter();
+    await transporter.sendMail(mailOptions);
     console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${emailDestino}`);
 };
 
