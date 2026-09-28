@@ -1,19 +1,35 @@
 const nodemailer = require("nodemailer");
 
+/**
+ * Obtiene una variable de entorno de forma segura, ignorando espacios en blanco accidentales
+ * tanto en el nombre de la variable (key) como en su valor, con opción de valor por defecto.
+ */
+const obtenerEnv = (nombre, fallback = '') => {
+    if (process.env[nombre] && String(process.env[nombre]).trim()) {
+        return String(process.env[nombre]).trim();
+    }
+    const match = Object.keys(process.env).find(k => k.trim().toUpperCase() === nombre.toUpperCase());
+    if (match && process.env[match] && String(process.env[match]).trim()) {
+        return String(process.env[match]).trim();
+    }
+    return fallback;
+};
+
 const crearTransporter = () => {
-    const port = parseInt(process.env.EMAIL_PORT || '465');
-    const isSecure = process.env.EMAIL_SECURE !== undefined
-        ? (String(process.env.EMAIL_SECURE).trim().toLowerCase() === 'true')
+    const port = parseInt(obtenerEnv('EMAIL_PORT', '465'));
+    const secureVal = obtenerEnv('EMAIL_SECURE', '');
+    const isSecure = secureVal !== ''
+        ? (secureVal.toLowerCase() === 'true')
         : (port === 465);
 
     return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        host: obtenerEnv('EMAIL_HOST', 'smtp.gmail.com'),
         port: port,
         secure: isSecure,
         family: 4,           // Forzar IPv4 — evita timeouts en Render y otros clouds
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
+            user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
+            pass: obtenerEnv('EMAIL_PASS'),
         },
         tls: {
             rejectUnauthorized: false
@@ -32,8 +48,12 @@ const crearTransporter = () => {
  * @param {Object} agenda - Datos de la agenda guardada
  */
 const enviarNotificacionAgenda = async (agenda) => {
+    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
+    const emailPass = obtenerEnv('EMAIL_PASS');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'o.alfaro@vamosamejorar.com');
+
     // Validar variables de entorno requeridas
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !process.env.EMAIL_DESTINO) {
+    if (!emailUser || !emailPass || !emailDestino) {
         console.warn('[Mailer] Variables de entorno de correo no configuradas, se omite la notificación.');
         return;
     }
@@ -129,10 +149,14 @@ const enviarNotificacionAgenda = async (agenda) => {
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
+    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
+    const emailPass = obtenerEnv('EMAIL_PASS');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'o.alfaro@vamosamejorar.com');
+
     // Validar variables de entorno requeridas
-    if (!process.env.EMAIL_USER) throw new Error('Variable de entorno EMAIL_USER no definida en el servidor.');
-    if (!process.env.EMAIL_PASS) throw new Error('Variable de entorno EMAIL_PASS no definida en el servidor.');
-    if (!process.env.EMAIL_DESTINO) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
+    if (!emailUser) throw new Error('Variable de entorno EMAIL_USER no definida en el servidor.');
+    if (!emailPass) throw new Error('Variable de entorno EMAIL_PASS no definida en el servidor.');
+    if (!emailDestino) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
     const parseFechaMX = (f, opts) => {
         if (!f) return "N/A";
         const raw = typeof f === "string" ? f.substring(0, 10) : new Date(f).toISOString().substring(0, 10);
@@ -176,8 +200,9 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     }).join("");
 
     const mailOptions = {
-        from: `"Sistema VAM Operaciones" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_DESTINO,
+        from: `"Sistema VAM Operaciones" <${emailUser}>`,
+        replyTo: 'transformacion.digital@vamosamejorar.com',
+        to: emailDestino,
         subject: `Resumen de Agenda — ${fechaInicioFmt} al ${fechaFinFmt}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
@@ -215,9 +240,9 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
             </div>`
     };
 
-    console.log(`[Mailer] 🚀 Conectando a ${process.env.EMAIL_HOST}:${process.env.EMAIL_PORT} para enviar resumen (${agendas.length} actividades) a: ${process.env.EMAIL_DESTINO}...`);
+    console.log(`[Mailer] 🚀 Conectando a ${obtenerEnv('EMAIL_HOST', 'smtp.gmail.com')}:${obtenerEnv('EMAIL_PORT', '465')} para enviar resumen (${agendas.length} actividades) a: ${emailDestino}...`);
     await crearTransporter().sendMail(mailOptions);
-    console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${process.env.EMAIL_DESTINO}`);
+    console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${emailDestino}`);
 };
 
 module.exports = {
