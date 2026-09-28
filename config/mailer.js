@@ -1,13 +1,20 @@
 const nodemailer = require("nodemailer");
 
-// Transporter de Gmail usando contraseña de aplicación
-const transporter = nodemailer.createTransport({
-    service: "gmail",
+// El transporter se crea en el momento de enviar (no al cargar el módulo),
+// así dotenv ya habrá cargado las variables de entorno correctamente.
+const crearTransporter = () => nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,           // mail.vamosamejorar.com
+    port: parseInt(process.env.EMAIL_PORT || '465'),
+    secure: process.env.EMAIL_SECURE !== 'false', // true para puerto 465 (SSL)
     auth: {
-        user: process.env.EMAIL_USER,
+        user: process.env.EMAIL_USER,       // transformacion.digital@vamosamejorar.com
         pass: process.env.EMAIL_PASS,
     },
+    tls: {
+        rejectUnauthorized: false           // evita errores con certificados autofirmados
+    }
 });
+
 
 /**
  * Envía un correo de notificación cuando se registra una nueva agenda
@@ -16,6 +23,11 @@ const transporter = nodemailer.createTransport({
  * @param {Object} agenda - Datos de la agenda guardada
  */
 const enviarNotificacionAgenda = async (agenda) => {
+    // Validar variables de entorno requeridas
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !process.env.EMAIL_DESTINO) {
+        console.warn('[Mailer] Variables de entorno de correo no configuradas, se omite la notificación.');
+        return;
+    }
     const rolesNotificar = ["auditoria", "mercadotecnia", "rh"];
 
     if (!rolesNotificar.includes((agenda.rol || "").toLowerCase().trim())) {
@@ -96,7 +108,7 @@ const enviarNotificacionAgenda = async (agenda) => {
         `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await crearTransporter().sendMail(mailOptions);
     console.log(`[Mailer] Notificacion enviada a ${process.env.EMAIL_DESTINO} (rol: ${agenda.rol})`);
 };
 
@@ -108,6 +120,10 @@ const enviarNotificacionAgenda = async (agenda) => {
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
+    // Validar variables de entorno requeridas
+    if (!process.env.EMAIL_USER) throw new Error('Variable de entorno EMAIL_USER no definida en el servidor.');
+    if (!process.env.EMAIL_PASS) throw new Error('Variable de entorno EMAIL_PASS no definida en el servidor.');
+    if (!process.env.EMAIL_DESTINO) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
     const parseFechaMX = (f, opts) => {
         if (!f) return "N/A";
         const raw = typeof f === "string" ? f.substring(0, 10) : new Date(f).toISOString().substring(0, 10);
@@ -190,12 +206,12 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
             </div>`
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`[Mailer] Resumen de agenda enviado a ${process.env.EMAIL_DESTINO} (${agendas.length} actividades)`);
+    console.log(`[Mailer] 🚀 Conectando a ${process.env.EMAIL_HOST}:${process.env.EMAIL_PORT} para enviar resumen (${agendas.length} actividades) a: ${process.env.EMAIL_DESTINO}...`);
+    await crearTransporter().sendMail(mailOptions);
+    console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${process.env.EMAIL_DESTINO}`);
 };
 
 module.exports = {
-    transporter,
     enviarNotificacionAgenda,
     enviarResumenAgendaEmail
 };

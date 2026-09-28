@@ -84,6 +84,13 @@ exports.crearAgendaAdmin = async (req, res) => {
 
             const guardadas = await AgendaAdmin.insertMany(documentos);
 
+            // Log para roles de auditoría, mercadotecnia y RH
+            const rolesMonitoreados = ['auditoria', 'mercadotecnia', 'rh'];
+            if (rolesMonitoreados.includes(rolNormalizado)) {
+                const ahora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+                console.log(`[AGENDA-${rolNormalizado.toUpperCase()}][${ahora}] 📝 Registro masivo: ${guardadas.length} actividad(es) guardada(s) por '${userLogin}' (${nombreFinal}). Semana: ${semana || 'N/A'}`);
+            }
+
             return res.status(201).json({
                 success: true,
                 message: `Se registraron ${guardadas.length} actividad(es) exitosamente`,
@@ -113,6 +120,13 @@ exports.crearAgendaAdmin = async (req, res) => {
         });
 
         await nuevaAgenda.save();
+
+        // Log para roles de auditoría, mercadotecnia y RH
+        const rolesMonitoreados = ['auditoria', 'mercadotecnia', 'rh'];
+        if (rolesMonitoreados.includes(rolNormalizado)) {
+            const ahora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+            console.log(`[AGENDA-${rolNormalizado.toUpperCase()}][${ahora}] 📝 Registro individual: Guardada actividad para '${userLogin}' (${nombreFinal || nombre}). Fecha: ${fecha}, Hora: ${hora || '--:--'}, Lugar: "${domicilio || 'N/A'}", Actividad: "${actividad || 'N/A'}"`);
+        }
 
         res.status(201).json({
             success: true,
@@ -317,8 +331,13 @@ exports.enviarResumenAgenda = async (req, res) => {
             nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar'
         }));
 
+        const ahora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+        console.log(`[AGENDA-CORREO][${ahora}] 📤 Solicitado envío de resumen por correo: ${agendasConNombre.length} actividad(es) del periodo ${fechaInicio} al ${fechaFin} (Filtro rol: ${rol || 'Todos los requeridos: auditoria, mercadotecnia, rh'}).`);
+
         // Enviar por correo utilizando el helper
         await enviarResumenAgendaEmail(agendasConNombre, fechaInicio, fechaFin);
+
+        console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo con resumen de ${agendasConNombre.length} actividad(es) enviado exitosamente a: ${process.env.EMAIL_DESTINO}`);
 
         res.status(200).json({
             success: true,
