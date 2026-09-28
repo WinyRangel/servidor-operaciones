@@ -17,11 +17,15 @@ if (dns.resolve6) {
     };
 }
 
+const fs = require('fs');
+const path = require('path');
+
 const nodemailer = require("nodemailer");
 
 /**
  * Obtiene una variable de entorno de forma segura, ignorando espacios en blanco accidentales
  * tanto en el nombre de la variable (key) como en su valor, con opción de valor por defecto.
+ * Además, verifica si fue configurada como Secret File en Render (/etc/secrets/<nombre>).
  */
 const obtenerEnv = (nombre, fallback = '') => {
     if (process.env[nombre] && String(process.env[nombre]).trim()) {
@@ -31,6 +35,15 @@ const obtenerEnv = (nombre, fallback = '') => {
     if (match && process.env[match] && String(process.env[match]).trim()) {
         return String(process.env[match]).trim();
     }
+    // Revisar si existe como Secret File en Render (/etc/secrets/<nombre>)
+    try {
+        const secretPath = path.join('/etc', 'secrets', nombre);
+        if (fs.existsSync(secretPath)) {
+            const content = fs.readFileSync(secretPath, 'utf8').trim();
+            if (content) return content;
+        }
+    } catch (_) {}
+
     return fallback;
 };
 

@@ -4,7 +4,27 @@ if (dns.setDefaultResultOrder) {
 }
 
 require('dotenv').config({ path: 'variables.env' });
+const fs = require('fs');
 const path = require('path');
+
+// Cargar variables si están configuradas como "Secret Files" en Render (/etc/secrets/<filename>)
+const secretsDir = '/etc/secrets';
+try {
+  if (fs.existsSync(secretsDir)) {
+    const files = fs.readdirSync(secretsDir);
+    files.forEach(file => {
+      const filePath = path.join(secretsDir, file);
+      if (fs.statSync(filePath).isFile()) {
+        const val = fs.readFileSync(filePath, 'utf8').trim();
+        process.env[file] = val;
+      }
+    });
+    console.log(`[Secrets] Cargadas ${files.length} variable(s) desde /etc/secrets`);
+  }
+} catch (e) {
+  // Ignorar en local
+}
+
 const nodemailer = require("nodemailer");
 const express = require('express');
 const conectarDB = require('./config/db');
