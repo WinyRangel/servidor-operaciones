@@ -22,24 +22,29 @@ const path = require('path');
 
 const nodemailer = require("nodemailer");
 
+const limpiarValor = (val) => {
+    if (!val) return '';
+    return String(val).replace(/^["']|["']$/g, '').trim();
+};
+
 /**
  * Obtiene una variable de entorno de forma segura, ignorando espacios en blanco accidentales
  * tanto en el nombre de la variable (key) como en su valor, con opción de valor por defecto.
  * Además, verifica si fue configurada como Secret File en Render (/etc/secrets/<nombre>).
  */
 const obtenerEnv = (nombre, fallback = '') => {
-    if (process.env[nombre] && String(process.env[nombre]).trim()) {
-        return String(process.env[nombre]).trim();
+    if (process.env[nombre] && limpiarValor(process.env[nombre])) {
+        return limpiarValor(process.env[nombre]);
     }
     const match = Object.keys(process.env).find(k => k.trim().toUpperCase() === nombre.toUpperCase());
-    if (match && process.env[match] && String(process.env[match]).trim()) {
-        return String(process.env[match]).trim();
+    if (match && process.env[match] && limpiarValor(process.env[match])) {
+        return limpiarValor(process.env[match]);
     }
     // Revisar si existe como Secret File en Render (/etc/secrets/<nombre>)
     try {
         const secretPath = path.join('/etc', 'secrets', nombre);
         if (fs.existsSync(secretPath)) {
-            const content = fs.readFileSync(secretPath, 'utf8').trim();
+            const content = limpiarValor(fs.readFileSync(secretPath, 'utf8'));
             if (content) return content;
         }
     } catch (_) {}
@@ -140,6 +145,10 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo }) => {
 
         if (!res.ok) {
             const errData = await res.text();
+            if (res.status === 401) {
+                console.error(`[Mailer] ⚠️ Error 401 de Brevo ("Key not found"). Longitud de clave: ${brevoKey.length}, Prefijo: ${brevoKey.substring(0, 10)}...`);
+                console.error(`[Mailer] ℹ️ Importante: En Brevo ve a "SMTP & API" -> pestaña "API Keys" (NO la pestaña "SMTP"). La clave debe empezar con "xkeysib-".`);
+            }
             throw new Error(`Error en API de Brevo (${res.status}): ${errData}`);
         }
 
