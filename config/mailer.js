@@ -1,3 +1,7 @@
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
 const nodemailer = require("nodemailer");
 
 /**
@@ -50,7 +54,7 @@ const crearTransporter = () => {
 const enviarNotificacionAgenda = async (agenda) => {
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'o.alfaro@vamosamejorar.com');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
     if (!emailUser || !emailPass || !emailDestino) {
@@ -151,7 +155,7 @@ const enviarNotificacionAgenda = async (agenda) => {
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'o.alfaro@vamosamejorar.com');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
     if (!emailUser) throw new Error('Variable de entorno EMAIL_USER no definida en el servidor.');
@@ -168,8 +172,8 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     };
 
     const fechaInicioFmt = parseFechaMX(fechaInicio, { day: "2-digit", month: "long", year: "numeric" });
-    const fechaFinFmt   = parseFechaMX(fechaFin, { day: "2-digit", month: "long", year: "numeric" });
-    const emitidoEn     = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
+    const fechaFinFmt = parseFechaMX(fechaFin, { day: "2-digit", month: "long", year: "numeric" });
+    const emitidoEn = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
 
     const rolLabel = {
         auditoria: "Auditoría",

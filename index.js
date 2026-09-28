@@ -1,3 +1,8 @@
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
 require('dotenv').config({ path: 'variables.env' });
 const path = require('path');
 const nodemailer = require("nodemailer");
