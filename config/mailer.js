@@ -83,6 +83,118 @@ const crearTransporter = async () => {
     });
 };
 
+/**
+ * Envía un correo utilizando la mejor estrategia disponible:
+ * 1. Brevo REST API (HTTPS puerto 443 - recomendado para Render Free Tier)
+ * 2. Resend REST API (HTTPS puerto 443)
+ * 3. Fallback a Nodemailer SMTP tradicional (para local o planes con puertos SMTP abiertos)
+ */
+const enviarCorreo = async ({ from, to, subject, html, text, replyTo }) => {
+    const brevoKey = obtenerEnv('BREVO_API_KEY');
+    const resendKey = obtenerEnv('RESEND_API_KEY');
+
+    // 1. BREVO API (HTTPS - puerto 443, no bloqueado por Render)
+    if (brevoKey) {
+        console.log(`[Mailer] 🌐 Enviando vía Brevo REST API (HTTPS) a: ${to}...`);
+        const senderEmail = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
+        const senderName = 'Sistema VAM Operaciones';
+
+        const destinatarios = (Array.isArray(to) ? to : to.split(','))
+            .map(e => e.trim())
+            .filter(Boolean)
+            .map(email => ({ email }));
+
+        const body = {
+            sender: { name: senderName, email: senderEmail },
+            to: destinatarios,
+            subject: subject,
+            htmlContent: html,
+            ...(text ? { textContent: text } : {})
+        };
+        if (replyTo) {
+            body.replyTo = { email: replyTo };
+        }
+
+        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': brevoKey,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!res.ok) {
+            const errData = await res.text();
+            throw new Error(`Error en API de Brevo (${res.status}): ${errData}`);
+        }
+
+        const data = await res.json();
+        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Brevo API. MessageId: ${data.messageId || JSON.stringify(data)}`);
+        return data;
+    }
+
+    // 2. RESEND API (HTTPS - puerto 443, no bloqueado por Render)
+    if (resendKey) {
+        console.log(`[Mailer] 🌐 Enviando vía Resend REST API (HTTPS) a: ${to}...`);
+        const destinatarios = (Array.isArray(to) ? to : to.split(','))
+            .map(e => e.trim())
+            .filter(Boolean);
+
+        const fromAddress = obtenerEnv('RESEND_FROM', '') || `"Sistema VAM Operaciones" <onboarding@resend.dev>`;
+
+        const body = {
+            from: fromAddress,
+            to: destinatarios,
+            subject: subject,
+            html: html,
+            ...(text ? { text: text } : {})
+        };
+        if (replyTo) {
+            body.reply_to = replyTo;
+        }
+
+        const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${resendKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!res.ok) {
+            const errData = await res.text();
+            throw new Error(`Error en API de Resend (${res.status}): ${errData}`);
+        }
+
+        const data = await res.json();
+        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Resend API. ID: ${data.id || JSON.stringify(data)}`);
+        return data;
+    }
+
+    // 3. FALLBACK NODEMAILER (SMTP)
+    console.log(`[Mailer] 📧 Enviando vía SMTP (${obtenerEnv('EMAIL_HOST', 'smtp.gmail.com')}:${obtenerEnv('EMAIL_PORT', '465')}) a: ${to}...`);
+    try {
+        const transporter = await crearTransporter();
+        const info = await transporter.sendMail({
+            from: from || `"Sistema VAM Operaciones" <${obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com')}>`,
+            to: to,
+            subject: subject,
+            html: html,
+            text: text,
+            replyTo: replyTo
+        });
+        console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${to}`);
+        return info;
+    } catch (smtpErr) {
+        if (smtpErr.message && (smtpErr.message.includes('timeout') || smtpErr.code === 'ETIMEDOUT')) {
+            console.error('[Mailer] ❌ Error de timeout SMTP detectado. En Render (Free Tier), los puertos SMTP 465 y 587 están bloqueados por firewall. Configura la variable de entorno BREVO_API_KEY o RESEND_API_KEY en Render para enviar vía HTTPS sin bloqueos.');
+        }
+        throw smtpErr;
+    }
+};
 
 /**
  * Envía un correo de notificación cuando se registra una nueva agenda
@@ -91,15 +203,22 @@ const crearTransporter = async () => {
  * @param {Object} agenda - Datos de la agenda guardada
  */
 const enviarNotificacionAgenda = async (agenda) => {
+    const brevoKey = obtenerEnv('BREVO_API_KEY');
+    const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
     const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
-    if (!emailUser || !emailPass || !emailDestino) {
-        console.warn('[Mailer] Variables de entorno de correo no configuradas, se omite la notificación.');
+    if (!brevoKey && !resendKey && (!emailUser || !emailPass)) {
+        console.warn('[Mailer] Variables de entorno de correo no configuradas (se requiere BREVO_API_KEY, RESEND_API_KEY o EMAIL_USER/EMAIL_PASS).');
         return;
     }
+    if (!emailDestino) {
+        console.warn('[Mailer] Variable EMAIL_DESTINO no configurada, se omite la notificación.');
+        return;
+    }
+
     const rolesNotificar = ["auditoria", "mercadotecnia", "rh"];
 
     if (!rolesNotificar.includes((agenda.rol || "").toLowerCase().trim())) {
@@ -136,8 +255,8 @@ const enviarNotificacionAgenda = async (agenda) => {
     }[(agenda.rol || "").toLowerCase().trim()] || agenda.rol;
 
     const mailOptions = {
-        from: `"Sistema VAM Operaciones" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_DESTINO,
+        from: `"Sistema VAM Operaciones" <${emailUser}>`,
+        to: emailDestino,
         subject: `Nueva agenda registrada — ${rolLabel}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
@@ -180,8 +299,7 @@ const enviarNotificacionAgenda = async (agenda) => {
         `,
     };
 
-    const transporter = await crearTransporter();
-    await transporter.sendMail(mailOptions);
+    await enviarCorreo(mailOptions);
     console.log(`[Mailer] Notificacion enviada a ${emailDestino} (rol: ${agenda.rol})`);
 };
 
@@ -193,14 +311,18 @@ const enviarNotificacionAgenda = async (agenda) => {
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
+    const brevoKey = obtenerEnv('BREVO_API_KEY');
+    const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
     const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
-    if (!emailUser) throw new Error('Variable de entorno EMAIL_USER no definida en el servidor.');
-    if (!emailPass) throw new Error('Variable de entorno EMAIL_PASS no definida en el servidor.');
+    if (!brevoKey && !resendKey && (!emailUser || !emailPass)) {
+        throw new Error('No se han configurado credenciales de correo (definir BREVO_API_KEY, RESEND_API_KEY o EMAIL_USER y EMAIL_PASS en el servidor).');
+    }
     if (!emailDestino) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
+
     const parseFechaMX = (f, opts) => {
         if (!f) return "N/A";
         const raw = typeof f === "string" ? f.substring(0, 10) : new Date(f).toISOString().substring(0, 10);
@@ -284,10 +406,9 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
             </div>`
     };
 
-    console.log(`[Mailer] 🚀 Conectando a ${obtenerEnv('EMAIL_HOST', 'smtp.gmail.com')}:${obtenerEnv('EMAIL_PORT', '465')} para enviar resumen (${agendas.length} actividades) a: ${emailDestino}...`);
-    const transporter = await crearTransporter();
-    await transporter.sendMail(mailOptions);
-    console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${emailDestino}`);
+    console.log(`[Mailer] 🚀 Iniciando envío de resumen (${agendas.length} actividades) a: ${emailDestino}...`);
+    await enviarCorreo(mailOptions);
+    console.log(`[Mailer] ✅ Resumen de actividades entregado exitosamente a: ${emailDestino}`);
 };
 
 module.exports = {
