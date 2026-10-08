@@ -280,21 +280,21 @@ exports.actualizarAgendaAdmin = async (req, res) => {
 // Eliminar agenda
 // =========================================================================
 // =========================================================================
-// Enviar resumen de agenda por correo (manual, con rango de fechas)
+// Enviar resumen de agenda por correo (usuario logueado / filtros)
 // =========================================================================
 exports.enviarResumenAgenda = async (req, res) => {
     try {
         const { usuario: userLogin, nombre: userNombre, rol: userRol } = obtenerUsuarioYRol(req);
         const { fechaInicio, fechaFin, rol, usuario } = req.body;
 
+        // Validar obligatoriedad del rango de fechas
         if (!fechaInicio || !fechaFin) {
             return res.status(400).json({
                 success: false,
-                message: 'Se requieren fechaInicio y fechaFin para enviar el resumen.'
+                message: 'Es obligatorio seleccionar un rango de fechas (fecha de inicio y fecha de fin) para enviar el resumen de agendas.'
             });
         }
 
-        // Construir rango de fechas considerando inicio y fin del día
         const inicioStr = fechaInicio.toString().substring(0, 10);
         const finStr = fechaFin.toString().substring(0, 10);
 
@@ -308,11 +308,8 @@ exports.enviarResumenAgenda = async (req, res) => {
             }
         };
 
-        const rolSolicitante = (userRol || '').toLowerCase().trim();
-        const esAdminOSup = ['admin', 'sup'].includes(rolSolicitante);
-
-        // Si el usuario no es admin/supervisor, se restringe estrictamente a sus propias actividades
-        const usuarioObjetivo = !esAdminOSup ? (userNombre || userLogin || usuario) : (usuario || '');
+        // Siempre identificar el usuario objetivo: el recibido en el body o el usuario en sesión
+        const usuarioObjetivo = (usuario || userLogin || userNombre || '').trim();
 
         if (usuarioObjetivo) {
             let nombreDoc = usuarioObjetivo;
@@ -320,8 +317,8 @@ exports.enviarResumenAgenda = async (req, res) => {
             try {
                 const uDoc = await Usuario.findOne({
                     $or: [
-                        { usuario: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') },
-                        { nombre: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') }
+                        { usuario: new RegExp(`^${usuarioObjetivo}$`, 'i') },
+                        { nombre: new RegExp(`^${usuarioObjetivo}$`, 'i') }
                     ]
                 }).lean();
                 if (uDoc) {
@@ -331,19 +328,17 @@ exports.enviarResumenAgenda = async (req, res) => {
             } catch (_) { }
 
             filtro.$or = [
-                { usuario: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') },
-                { nombre: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') },
-                { usuario: new RegExp(`^${loginDoc.trim()}$`, 'i') },
-                { nombre: new RegExp(`^${nombreDoc.trim()}$`, 'i') }
+                { usuario: new RegExp(`^${usuarioObjetivo}$`, 'i') },
+                { nombre: new RegExp(`^${usuarioObjetivo}$`, 'i') },
+                { usuario: new RegExp(`^${loginDoc}$`, 'i') },
+                { nombre: new RegExp(`^${nombreDoc}$`, 'i') }
             ];
 
-            if (rolSolicitante && !esAdminOSup) {
-                filtro.rol = new RegExp(`^${rolSolicitante}$`, 'i');
-            } else if (rol) {
+            if (rol) {
                 filtro.rol = new RegExp(`^${rol.trim()}$`, 'i');
             }
         } else {
-            // Filtrar por rol (si no se indicó usuario)
+            // Filtrar por rol si no se especificó usuario
             const rolesNotificar = ['auditoria', 'mercadotecnia', 'rh'];
             if (rol && rolesNotificar.includes(rol.toLowerCase().trim())) {
                 filtro.rol = new RegExp(`^${rol.trim()}$`, 'i');
@@ -355,9 +350,12 @@ exports.enviarResumenAgenda = async (req, res) => {
         const agendas = await AgendaAdmin.find(filtro).sort({ fecha: 1, hora: 1 }).lean();
 
         if (agendas.length === 0) {
+            const periodoDesc = (fechaInicio || fechaFin) ? ' en el período seleccionado' : '';
             return res.status(200).json({
                 success: false,
-                message: 'No se encontraron actividades en el rango de fechas seleccionado para el usuario o rol correspondiente.'
+                message: usuarioObjetivo
+                    ? `No se encontraron actividades registradas para el usuario '${usuarioObjetivo}'${periodoDesc}.`
+                    : `No se encontraron actividades en el período seleccionado.`
             });
         }
 
@@ -367,44 +365,28 @@ exports.enviarResumenAgenda = async (req, res) => {
 
         const agendasConNombre = agendas.map(ag => ({
             ...ag,
-            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar'
+            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || usuarioObjetivo || 'Sin asignar'
         }));
 
-        // Agrupar actividades por usuario/responsable para que NUNCA se mezclen en un solo correo
-        const gruposPorUsuario = new Map();
-        for (const ag of agendasConNombre) {
-            const claveUsuario = (ag.nombre || ag.usuario || 'Sin asignar').trim();
-            if (!gruposPorUsuario.has(claveUsuario)) {
-                gruposPorUsuario.set(claveUsuario, []);
-            }
-            gruposPorUsuario.get(claveUsuario).push(ag);
-        }
-
         const ahora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
-        console.log(`[AGENDA-CORREO][${ahora}] 📤 Solicitado envío de resumen por correo: ${agendasConNombre.length} actividad(es) divididas en ${gruposPorUsuario.size} responsable(s) del periodo ${fechaInicio} al ${fechaFin}.`);
+        const destinoFinal = process.env.EMAIL_DESTINO || 'danielamanzanorangel@gmail.com';
+        console.log(`[AGENDA-CORREO][${ahora}] 📤 Enviando reporte de ${agendasConNombre.length} actividad(es) del usuario '${usuarioObjetivo || 'VAM'}' hacia: ${destinoFinal}`);
 
-        // Enviar un correo separado por cada responsable
-        let totalEnviados = 0;
-        for (const [responsable, listaAgendas] of gruposPorUsuario.entries()) {
-            await enviarResumenAgendaEmail(listaAgendas, fechaInicio, fechaFin);
-            totalEnviados++;
-            console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo (${totalEnviados}/${gruposPorUsuario.size}) con ${listaAgendas.length} actividad(es) de '${responsable}' enviado exitosamente a: ${process.env.EMAIL_DESTINO || 'danielamanzanorangel@gmail.com'}`);
-        }
+        await enviarResumenAgendaEmail(agendasConNombre, fechaInicio, fechaFin);
+
+        console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo con ${agendasConNombre.length} actividad(es) enviado exitosamente a: ${destinoFinal}`);
 
         res.status(200).json({
             success: true,
-            message: totalEnviados === 1
-                ? `Resumen de agenda enviado correctamente (${agendas.length} actividades).`
-                : `Se enviaron ${totalEnviados} correos individuales por responsable (${agendas.length} actividades en total).`,
-            total: agendas.length,
-            correosEnviados: totalEnviados
+            message: `Resumen de agenda enviado exitosamente (${agendasConNombre.length} actividades) a ${destinoFinal}.`,
+            total: agendasConNombre.length
         });
 
     } catch (error) {
         console.error('Error al enviar resumen de agenda:', error);
         res.status(500).json({
             success: false,
-            message: 'Error al enviar el resumen por correo.',
+            message: 'Error al enviar el resumen por correo: ' + (error.message || 'Error desconocido'),
             error: error.message
         });
     }

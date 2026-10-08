@@ -4,8 +4,8 @@ const nodemailer = require("nodemailer");
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com",
+        pass: process.env.EMAIL_PASS || "atwd ujuh szea pttu",
     },
 });
 
@@ -51,9 +51,12 @@ const enviarNotificacionAgenda = async (agenda) => {
         rh: "Recursos Humanos (RH)",
     }[(agenda.rol || "").toLowerCase().trim()] || agenda.rol;
 
+    const emailUser = process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com";
+    const emailDestino = process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com";
+
     const mailOptions = {
-        from: `"Sistema VAM Operaciones" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_DESTINO,
+        from: `"Sistema VAM Operaciones" <${emailUser}>`,
+        to: emailDestino,
         subject: `Nueva agenda registrada — ${rolLabel}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
@@ -97,15 +100,15 @@ const enviarNotificacionAgenda = async (agenda) => {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`[Mailer] Notificacion enviada a ${process.env.EMAIL_DESTINO} (rol: ${agenda.rol})`);
+    console.log(`[Mailer] Notificacion enviada a ${emailDestino} (rol: ${agenda.rol})`);
 };
 
 /**
- * Envía un correo de resumen con el listado de actividades dentro de un rango de fechas.
+ * Envía un correo de resumen con el listado de actividades del usuario.
  *
  * @param {Array} agendas - Lista de agendas a incluir en la tabla del correo
- * @param {string} fechaInicio - Fecha inicial del rango
- * @param {string} fechaFin - Fecha final del rango
+ * @param {string} fechaInicio - Fecha inicial del rango (opcional)
+ * @param {string} fechaFin - Fecha final del rango (opcional)
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const parseFechaMX = (f, opts) => {
@@ -118,9 +121,20 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
         return new Date(f).toLocaleDateString("es-MX", { ...opts, timeZone: "America/Mexico_City" });
     };
 
-    const fechaInicioFmt = parseFechaMX(fechaInicio, { day: "2-digit", month: "long", year: "numeric" });
-    const fechaFinFmt = parseFechaMX(fechaFin, { day: "2-digit", month: "long", year: "numeric" });
+    let periodoTexto = "Todas las actividades registradas";
+    if (fechaInicio && fechaFin) {
+        const fechaInicioFmt = parseFechaMX(fechaInicio, { day: "2-digit", month: "long", year: "numeric" });
+        const fechaFinFmt = parseFechaMX(fechaFin, { day: "2-digit", month: "long", year: "numeric" });
+        periodoTexto = (fechaInicio === fechaFin) ? fechaInicioFmt : `${fechaInicioFmt} al ${fechaFinFmt}`;
+    } else if (fechaInicio || fechaFin) {
+        periodoTexto = parseFechaMX(fechaInicio || fechaFin, { day: "2-digit", month: "long", year: "numeric" });
+    }
+
     const emitidoEn = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
+
+    const responsable = agendas[0]?.nombre || agendas[0]?.usuario || 'Usuario';
+    const emailRemitente = process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com";
+    const emailDestino = process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com";
 
     const rolLabel = {
         auditoria: "Auditoría",
@@ -151,15 +165,18 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     }).join("");
 
     const mailOptions = {
-        from: `"Sistema VAM Operaciones" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_DESTINO,
-        subject: `Resumen de Agenda — ${fechaInicioFmt} al ${fechaFinFmt}`,
+        from: `"Sistema VAM Operaciones" <${emailRemitente}>`,
+        to: emailDestino,
+        subject: `Resumen de Agenda — ${responsable} (${periodoTexto})`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #283593 100%); padding: 24px 30px;">
                     <h2 style="color: #fff; margin: 0; font-size: 22px;">📅 Resumen de Actividades Agendadas</h2>
-                    <p style="color: #c5cae9; margin: 6px 0 0; font-size: 14px;">
-                        Período: <strong>${fechaInicioFmt}</strong> al <strong>${fechaFinFmt}</strong>
+                    <div style="background: rgba(255, 255, 255, 0.15); border-left: 4px solid #60a5fa; border-radius: 4px; padding: 10px 16px; margin-top: 12px;">
+                        <span style="color: #ffffff; font-size: 15px; font-weight: 700;">👤 Responsable: ${responsable}</span>
+                    </div>
+                    <p style="color: #c5cae9; margin: 8px 0 0; font-size: 14px;">
+                        Período: <strong>${periodoTexto}</strong>
                     </p>
                 </div>
                 <div style="background: #f8fafc; padding: 14px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
@@ -185,13 +202,13 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
                     </table>
                 </div>
                 <div style="background: #f1f5f9; padding: 14px 24px; text-align: center; font-size: 12px; color: #94a3b8;">
-                    Este resumen fue emitido desde el Sistema VAM Operaciones.
+                    Este resumen fue emitido desde el Sistema VAM Operaciones (${emailRemitente} → ${emailDestino}).
                 </div>
             </div>`
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`[Mailer] Resumen de agenda enviado a ${process.env.EMAIL_DESTINO} (${agendas.length} actividades)`);
+    console.log(`[Mailer] Resumen de agenda enviado a ${emailDestino} (${agendas.length} actividades)`);
 };
 
 module.exports = {
