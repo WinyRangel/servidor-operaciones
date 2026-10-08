@@ -88,7 +88,7 @@ const crearTransporter = async () => {
         port: port,
         secure: isSecure,
         auth: {
-            user: obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com'),
+            user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
             pass: obtenerEnv('EMAIL_PASS'),
         },
         tls: {
@@ -108,7 +108,7 @@ const crearTransporter = async () => {
  */
 const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => {
     const resendKey = obtenerEnv('RESEND_API_KEY');
-    const emailUser = obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com');
+    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const remitenteFinal = from || `"Sistema VAM Operaciones" <${emailUser}>`;
     const replyToFinal = replyTo || emailUser;
 
@@ -189,7 +189,7 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const resendKey = obtenerEnv('RESEND_API_KEY');
-    const emailUser = obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com');
+    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
     const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
