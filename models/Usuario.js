@@ -12,7 +12,7 @@ const usuarioSchema = new mongoose.Schema({
   rol: {
     type: String,
     required: true,
-    enum: ['sup', 'admin', 'coordinador', 'asesor', 'auditoria', 'mercadotecnia', 'rh']
+    enum: ['sup', 'admin', 'coordinador', 'asesor', 'auditoria', 'mercadotecnia', 'rh', 'adminsis']
   },
   coordinacion: {
     type: String,

@@ -1,7 +1,9 @@
 const AgendaAdmin = require('../models/AgendaAdmin');
+const Agenda = require('../models/Agenda');
+const AgendaAsesor = require('../models/AgendaAsesor');
 const Usuario = require('../models/Usuario');
 const jwt = require('jsonwebtoken');
-const { enviarNotificacionAgenda, enviarResumenAgendaEmail } = require('../config/mailer');
+const { enviarResumenAgendaEmail } = require('../config/mailer');
 
 const SECRET_KEY = '123VAM!!'; // Misma clave secreta de autenticación
 const ROLES_PERMITIDOS = ['admin', 'sup', 'mercadotecnia', 'auditoria', 'rh'];
@@ -282,7 +284,8 @@ exports.actualizarAgendaAdmin = async (req, res) => {
 // =========================================================================
 exports.enviarResumenAgenda = async (req, res) => {
     try {
-        const { fechaInicio, fechaFin, rol } = req.body;
+        const { usuario: userLogin, nombre: userNombre, rol: userRol } = obtenerUsuarioYRol(req);
+        const { fechaInicio, fechaFin, rol, usuario } = req.body;
 
         if (!fechaInicio || !fechaFin) {
             return res.status(400).json({
@@ -305,12 +308,48 @@ exports.enviarResumenAgenda = async (req, res) => {
             }
         };
 
-        // Filtrar por rol
-        const rolesNotificar = ['auditoria', 'mercadotecnia', 'rh'];
-        if (rol && rolesNotificar.includes(rol.toLowerCase().trim())) {
-            filtro.rol = new RegExp(`^${rol.trim()}$`, 'i');
+        const rolSolicitante = (userRol || '').toLowerCase().trim();
+        const esAdminOSup = ['admin', 'sup'].includes(rolSolicitante);
+
+        // Si el usuario no es admin/supervisor, se restringe estrictamente a sus propias actividades
+        const usuarioObjetivo = !esAdminOSup ? (userNombre || userLogin || usuario) : (usuario || '');
+
+        if (usuarioObjetivo) {
+            let nombreDoc = usuarioObjetivo;
+            let loginDoc = usuarioObjetivo;
+            try {
+                const uDoc = await Usuario.findOne({
+                    $or: [
+                        { usuario: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') },
+                        { nombre: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') }
+                    ]
+                }).lean();
+                if (uDoc) {
+                    if (uDoc.nombre) nombreDoc = uDoc.nombre;
+                    if (uDoc.usuario) loginDoc = uDoc.usuario;
+                }
+            } catch (_) { }
+
+            filtro.$or = [
+                { usuario: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') },
+                { nombre: new RegExp(`^${usuarioObjetivo.trim()}$`, 'i') },
+                { usuario: new RegExp(`^${loginDoc.trim()}$`, 'i') },
+                { nombre: new RegExp(`^${nombreDoc.trim()}$`, 'i') }
+            ];
+
+            if (rolSolicitante && !esAdminOSup) {
+                filtro.rol = new RegExp(`^${rolSolicitante}$`, 'i');
+            } else if (rol) {
+                filtro.rol = new RegExp(`^${rol.trim()}$`, 'i');
+            }
         } else {
-            filtro.rol = { $in: [/auditoria/i, /mercadotecnia/i, /^rh$/i] };
+            // Filtrar por rol (si no se indicó usuario)
+            const rolesNotificar = ['auditoria', 'mercadotecnia', 'rh'];
+            if (rol && rolesNotificar.includes(rol.toLowerCase().trim())) {
+                filtro.rol = new RegExp(`^${rol.trim()}$`, 'i');
+            } else {
+                filtro.rol = { $in: [/auditoria/i, /mercadotecnia/i, /^rh$/i] };
+            }
         }
 
         const agendas = await AgendaAdmin.find(filtro).sort({ fecha: 1, hora: 1 }).lean();
@@ -318,7 +357,7 @@ exports.enviarResumenAgenda = async (req, res) => {
         if (agendas.length === 0) {
             return res.status(200).json({
                 success: false,
-                message: 'No se encontraron actividades en el rango de fechas seleccionado para los roles correspondientes (Auditoría, Mercadotecnia y RH).'
+                message: 'No se encontraron actividades en el rango de fechas seleccionado para el usuario o rol correspondiente.'
             });
         }
 
@@ -331,18 +370,34 @@ exports.enviarResumenAgenda = async (req, res) => {
             nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar'
         }));
 
+        // Agrupar actividades por usuario/responsable para que NUNCA se mezclen en un solo correo
+        const gruposPorUsuario = new Map();
+        for (const ag of agendasConNombre) {
+            const claveUsuario = (ag.nombre || ag.usuario || 'Sin asignar').trim();
+            if (!gruposPorUsuario.has(claveUsuario)) {
+                gruposPorUsuario.set(claveUsuario, []);
+            }
+            gruposPorUsuario.get(claveUsuario).push(ag);
+        }
+
         const ahora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
-        console.log(`[AGENDA-CORREO][${ahora}] 📤 Solicitado envío de resumen por correo: ${agendasConNombre.length} actividad(es) del periodo ${fechaInicio} al ${fechaFin} (Filtro rol: ${rol || 'Todos los requeridos: auditoria, mercadotecnia, rh'}).`);
+        console.log(`[AGENDA-CORREO][${ahora}] 📤 Solicitado envío de resumen por correo: ${agendasConNombre.length} actividad(es) divididas en ${gruposPorUsuario.size} responsable(s) del periodo ${fechaInicio} al ${fechaFin}.`);
 
-        // Enviar por correo utilizando el helper
-        await enviarResumenAgendaEmail(agendasConNombre, fechaInicio, fechaFin);
-
-        console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo con resumen de ${agendasConNombre.length} actividad(es) enviado exitosamente a: ${process.env.EMAIL_DESTINO}`);
+        // Enviar un correo separado por cada responsable
+        let totalEnviados = 0;
+        for (const [responsable, listaAgendas] of gruposPorUsuario.entries()) {
+            await enviarResumenAgendaEmail(listaAgendas, fechaInicio, fechaFin);
+            totalEnviados++;
+            console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo (${totalEnviados}/${gruposPorUsuario.size}) con ${listaAgendas.length} actividad(es) de '${responsable}' enviado exitosamente a: ${process.env.EMAIL_DESTINO || 'o.alfaro@vamosamejorar.com'}`);
+        }
 
         res.status(200).json({
             success: true,
-            message: `Resumen enviado correctamente con ${agendas.length} actividad(es).`,
-            total: agendas.length
+            message: totalEnviados === 1
+                ? `Resumen de agenda enviado correctamente (${agendas.length} actividades).`
+                : `Se enviaron ${totalEnviados} correos individuales por responsable (${agendas.length} actividades en total).`,
+            total: agendas.length,
+            correosEnviados: totalEnviados
         });
 
     } catch (error) {
@@ -398,6 +453,161 @@ exports.eliminarAgendaAdmin = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error al eliminar la agenda',
+            error: error.message
+        });
+    }
+};
+
+
+
+exports.obtenerAllAgendas = async (req, res) => {
+    try {
+        const { usuario: userNombre, rol: userRol } = obtenerUsuarioYRol(req);
+        const { usuario, rol, semana, fecha } = req.query;
+
+        const rolConsultante = (userRol || '').toLowerCase().trim();
+        const esAdminOSup = ['admin', 'sup', 'adminsis', 'auditoria'].includes(rolConsultante);
+
+        // ----------------------------------------------------------------
+        // Construcción de filtros por colección
+        // ----------------------------------------------------------------
+
+        // Filtro para agendaadmin (tiene campo rol, nombre, usuario)
+        const filtroAdmin = {};
+        // Filtro para agendas/coordinadores (campo: coordinador, semana, fecha)
+        const filtroCoord = {};
+        // Filtro para agendaasesors (campo: asesor, semana, fecha)
+        const filtroAsesor = {};
+
+        if (!esAdminOSup && userNombre) {
+            // Usuario no-admin: solo ve sus propias actividades
+            let nombreUsuario = userNombre;
+            try {
+                const uDoc = await Usuario.findOne({ usuario: new RegExp(`^${userNombre}$`, 'i') }).lean();
+                if (uDoc && uDoc.nombre) nombreUsuario = uDoc.nombre;
+            } catch (e) { }
+
+            filtroAdmin.$or = [
+                { usuario: new RegExp(`^${userNombre}$`, 'i') },
+                { nombre: new RegExp(`^${nombreUsuario}$`, 'i') }
+            ];
+            if (rolConsultante) filtroAdmin.rol = rolConsultante;
+
+            filtroCoord.coordinador = new RegExp(`^${nombreUsuario}$`, 'i');
+            filtroAsesor.asesor = new RegExp(`^${nombreUsuario}$`, 'i');
+        } else {
+            // Admin/Supervisor: puede filtrar por usuario o rol
+            if (usuario) {
+                filtroAdmin.$or = [
+                    { usuario: new RegExp(`^${usuario}$`, 'i') },
+                    { nombre: new RegExp(`^${usuario}$`, 'i') }
+                ];
+                filtroCoord.coordinador = new RegExp(`^${usuario}$`, 'i');
+                filtroAsesor.asesor = new RegExp(`^${usuario}$`, 'i');
+            }
+            if (rol) {
+                const rolLower = rol.toLowerCase().trim();
+                // Solo filtrar la colección que corresponda al rol
+                if (rolLower === 'coordinador') {
+                    // solo traer coordinadores, dejar los otros vacíos
+                    filtroAdmin._id = null; // resultado vacío
+                    filtroAsesor._id = null;
+                } else if (rolLower === 'asesor') {
+                    filtroAdmin._id = null;
+                    filtroCoord._id = null;
+                } else {
+                    filtroAdmin.rol = rolLower;
+                    filtroCoord._id = null;
+                    filtroAsesor._id = null;
+                }
+            }
+        }
+
+        // Filtro por semana (aplica a todas)
+        if (semana) {
+            filtroAdmin.semana = semana;
+            filtroCoord.semana = semana;
+            filtroAsesor.semana = semana;
+        }
+
+        // Filtro por fecha exacta (aplica a todas)
+        if (fecha) {
+            const fechaBusqueda = new Date(fecha);
+            const diaSiguiente = new Date(fecha);
+            diaSiguiente.setDate(diaSiguiente.getDate() + 1);
+            const rangeFecha = { $gte: fechaBusqueda, $lt: diaSiguiente };
+            filtroAdmin.fecha = rangeFecha;
+            filtroCoord.fecha = rangeFecha;
+            filtroAsesor.fecha = rangeFecha;
+        }
+
+        // ----------------------------------------------------------------
+        // Consultas paralelas a las 3 colecciones
+        // ----------------------------------------------------------------
+        const [agendasAdmin, agendasCoord, agendasAses] = await Promise.all([
+            AgendaAdmin.find(filtroAdmin).lean(),
+            Agenda.find(filtroCoord).lean(),
+            AgendaAsesor.find(filtroAsesor).lean()
+        ]);
+
+        // Enriquecer nombres desde tabla de usuarios
+        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
+        const mapaNombres = new Map(usuarios.map(u => [(u.usuario || '').toLowerCase(), u.nombre || u.usuario]));
+
+        // Normalizar agendaadmin
+        const normAdmin = agendasAdmin.map(ag => ({
+            ...ag,
+            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar',
+            rol: ag.rol || 'admin'
+        }));
+
+        // Normalizar coordinadores: agregar rol y nombre desde campo coordinador
+        const normCoord = agendasCoord.map(ag => ({
+            ...ag,
+            rol: 'coordinador',
+            nombre: ag.coordinador || 'Sin asignar',
+            usuario: ag.coordinador || ''
+        }));
+
+        // Normalizar asesores: agregar rol y nombre desde campo asesor
+        const normAsesor = agendasAses.map(ag => ({
+            ...ag,
+            rol: 'asesor',
+            nombre: ag.asesor || 'Sin asignar',
+            usuario: ag.asesor || ''
+        }));
+
+        // Combinar y ordenar: fecha ASC → nombre ASC → hora ASC
+        // Así se agrupa por persona dentro de cada día
+        const todasLasAgendas = [...normAdmin, ...normCoord, ...normAsesor];
+
+        todasLasAgendas.sort((a, b) => {
+            // 1. Por fecha
+            const fA = a.fecha ? new Date(a.fecha).toISOString().substring(0, 10) : '';
+            const fB = b.fecha ? new Date(b.fecha).toISOString().substring(0, 10) : '';
+            if (fA !== fB) return fA.localeCompare(fB);
+
+            // 2. Por nombre (agrupa todas las actividades de una persona en el mismo día)
+            const nA = (a.nombre || '').toLowerCase();
+            const nB = (b.nombre || '').toLowerCase();
+            if (nA !== nB) return nA.localeCompare(nB);
+
+            // 3. Por hora
+            const hA = (a.hora || '').trim();
+            const hB = (b.hora || '').trim();
+            return hA.localeCompare(hB);
+        });
+
+        res.status(200).json({
+            success: true,
+            total: todasLasAgendas.length,
+            data: todasLasAgendas
+        });
+    } catch (error) {
+        console.error('Error al obtener agendas admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al consultar las agendas',
             error: error.message
         });
     }

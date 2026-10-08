@@ -47,7 +47,7 @@ const obtenerEnv = (nombre, fallback = '') => {
             const content = limpiarValor(fs.readFileSync(secretPath, 'utf8'));
             if (content) return content;
         }
-    } catch (_) {}
+    } catch (_) { }
 
     return fallback;
 };
@@ -74,7 +74,7 @@ const resolverHostIPv4 = async (hostname) => {
 };
 
 const crearTransporter = async () => {
-    const rawHost = obtenerEnv('EMAIL_HOST', 'smtp.gmail.com');
+    const rawHost = obtenerEnv('EMAIL_HOST', 'mail.vamosamejorar.com');
     const port = parseInt(obtenerEnv('EMAIL_PORT', '465'));
     const secureVal = obtenerEnv('EMAIL_SECURE', '');
     const isSecure = secureVal !== ''
@@ -88,7 +88,7 @@ const crearTransporter = async () => {
         port: port,
         secure: isSecure,
         auth: {
-            user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
+            user: obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com'),
             pass: obtenerEnv('EMAIL_PASS'),
         },
         tls: {
@@ -102,69 +102,24 @@ const crearTransporter = async () => {
 };
 
 /**
- * Envía un correo utilizando la mejor estrategia disponible:
- * 1. Brevo REST API (HTTPS puerto 443 - recomendado para Render Free Tier)
- * 2. Resend REST API (HTTPS puerto 443)
- * 3. Fallback a Nodemailer SMTP tradicional (para local o planes con puertos SMTP abiertos)
+ * Envía un correo utilizando:
+ * 1. Resend REST API (HTTPS puerto 443 - opcional si RESEND_API_KEY está configurado)
+ * 2. Nodemailer SMTP institucional directo (HostPapa cPanel / puerto 465)
  */
-const enviarCorreo = async ({ from, to, subject, html, text, replyTo }) => {
-    const brevoKey = obtenerEnv('BREVO_API_KEY');
+const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => {
     const resendKey = obtenerEnv('RESEND_API_KEY');
+    const emailUser = obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com');
+    const remitenteFinal = from || `"Sistema VAM Operaciones" <${emailUser}>`;
+    const replyToFinal = replyTo || emailUser;
 
-    // 1. BREVO API (HTTPS - puerto 443, no bloqueado por Render)
-    if (brevoKey) {
-        console.log(`[Mailer] 🌐 Enviando vía Brevo REST API (HTTPS) a: ${to}...`);
-        const senderEmail = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
-        const senderName = 'Sistema VAM Operaciones';
-
-        const destinatarios = (Array.isArray(to) ? to : to.split(','))
-            .map(e => e.trim())
-            .filter(Boolean)
-            .map(email => ({ email }));
-
-        const body = {
-            sender: { name: senderName, email: senderEmail },
-            to: destinatarios,
-            subject: subject,
-            htmlContent: html,
-            ...(text ? { textContent: text } : {})
-        };
-        if (replyTo) {
-            body.replyTo = { email: replyTo };
-        }
-
-        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: {
-                'accept': 'application/json',
-                'api-key': brevoKey,
-                'content-type': 'application/json'
-            },
-            body: JSON.stringify(body)
-        });
-
-        if (!res.ok) {
-            const errData = await res.text();
-            if (res.status === 401) {
-                console.error(`[Mailer] ⚠️ Error 401 de Brevo ("Key not found"). Longitud de clave: ${brevoKey.length}, Prefijo: ${brevoKey.substring(0, 10)}...`);
-                console.error(`[Mailer] ℹ️ Importante: En Brevo ve a "SMTP & API" -> pestaña "API Keys" (NO la pestaña "SMTP"). La clave debe empezar con "xkeysib-".`);
-            }
-            throw new Error(`Error en API de Brevo (${res.status}): ${errData}`);
-        }
-
-        const data = await res.json();
-        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Brevo API. MessageId: ${data.messageId || JSON.stringify(data)}`);
-        return data;
-    }
-
-    // 2. RESEND API (HTTPS - puerto 443, no bloqueado por Render)
+    // 1. RESEND API (HTTPS - puerto 443, solo si está explícitamente configurado)
     if (resendKey) {
         console.log(`[Mailer] 🌐 Enviando vía Resend REST API (HTTPS) a: ${to}...`);
         const destinatarios = (Array.isArray(to) ? to : to.split(','))
             .map(e => e.trim())
             .filter(Boolean);
 
-        const fromAddress = obtenerEnv('RESEND_FROM', '') || `"Sistema VAM Operaciones" <onboarding@resend.dev>`;
+        const fromAddress = obtenerEnv('RESEND_FROM', '') || remitenteFinal;
 
         const body = {
             from: fromAddress,
@@ -173,8 +128,11 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo }) => {
             html: html,
             ...(text ? { text: text } : {})
         };
-        if (replyTo) {
-            body.reply_to = replyTo;
+        if (replyToFinal) {
+            body.reply_to = replyToFinal;
+        }
+        if (bcc) {
+            body.bcc = Array.isArray(bcc) ? bcc : [bcc];
         }
 
         const res = await fetch('https://api.resend.com/emails', {
@@ -196,133 +154,30 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo }) => {
         return data;
     }
 
-    // 3. FALLBACK NODEMAILER (SMTP)
-    console.log(`[Mailer] 📧 Enviando vía SMTP (${obtenerEnv('EMAIL_HOST', 'smtp.gmail.com')}:${obtenerEnv('EMAIL_PORT', '465')}) a: ${to}...`);
+    // 2. ENVÍO DIRECTO VÍA SMTP INSTITUCIONAL (HostPapa)
+    const hostSmtp = obtenerEnv('EMAIL_HOST', 'mail.vamosamejorar.com');
+    const portSmtp = obtenerEnv('EMAIL_PORT', '465');
+    console.log(`[Mailer] 📧 Enviando vía SMTP (${hostSmtp}:${portSmtp}) desde ${remitenteFinal} a: ${to} (Copia de respaldo: ${bcc || 'N/A'})...`);
     try {
         const transporter = await crearTransporter();
-        const info = await transporter.sendMail({
-            from: from || `"Sistema VAM Operaciones" <${obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com')}>`,
+        const mailPayload = {
+            from: remitenteFinal,
             to: to,
             subject: subject,
             html: html,
             text: text,
-            replyTo: replyTo
-        });
-        console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${to}`);
+            replyTo: replyToFinal
+        };
+        if (bcc) {
+            mailPayload.bcc = bcc;
+        }
+        const info = await transporter.sendMail(mailPayload);
+        console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${to} (MessageId: ${info.messageId})`);
         return info;
     } catch (smtpErr) {
-        if (smtpErr.message && (smtpErr.message.includes('timeout') || smtpErr.code === 'ETIMEDOUT')) {
-            console.error('[Mailer] ❌ Error de timeout SMTP detectado. En Render (Free Tier), los puertos SMTP 465 y 587 están bloqueados por firewall. Configura la variable de entorno BREVO_API_KEY o RESEND_API_KEY en Render para enviar vía HTTPS sin bloqueos.');
-        }
+        console.error('[Mailer] ❌ Error al enviar correo vía SMTP:', smtpErr);
         throw smtpErr;
     }
-};
-
-/**
- * Envía un correo de notificación cuando se registra una nueva agenda
- * para los roles: auditoria, mercadotecnia, rh.
- *
- * @param {Object} agenda - Datos de la agenda guardada
- */
-const enviarNotificacionAgenda = async (agenda) => {
-    const brevoKey = obtenerEnv('BREVO_API_KEY');
-    const resendKey = obtenerEnv('RESEND_API_KEY');
-    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
-    const emailPass = obtenerEnv('EMAIL_PASS');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
-
-    // Validar variables de entorno requeridas
-    if (!brevoKey && !resendKey && (!emailUser || !emailPass)) {
-        console.warn('[Mailer] Variables de entorno de correo no configuradas (se requiere BREVO_API_KEY, RESEND_API_KEY o EMAIL_USER/EMAIL_PASS).');
-        return;
-    }
-    if (!emailDestino) {
-        console.warn('[Mailer] Variable EMAIL_DESTINO no configurada, se omite la notificación.');
-        return;
-    }
-
-    const rolesNotificar = ["auditoria", "mercadotecnia", "rh"];
-
-    if (!rolesNotificar.includes((agenda.rol || "").toLowerCase().trim())) {
-        return; // No aplica notificación para este rol
-    }
-
-    let fechaFormateada = "N/A";
-    if (agenda.fecha) {
-        const raw = typeof agenda.fecha === "string" ? agenda.fecha.substring(0, 10) : new Date(agenda.fecha).toISOString().substring(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-            const [y, m, d] = raw.split("-").map(Number);
-            fechaFormateada = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toLocaleDateString("es-MX", {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                timeZone: "America/Mexico_City",
-            });
-        } else {
-            fechaFormateada = new Date(agenda.fecha).toLocaleDateString("es-MX", {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                timeZone: "America/Mexico_City",
-            });
-        }
-    }
-
-    const rolLabel = {
-        auditoria: "Auditoría",
-        mercadotecnia: "Mercadotecnia",
-        rh: "Recursos Humanos (RH)",
-    }[(agenda.rol || "").toLowerCase().trim()] || agenda.rol;
-
-    const mailOptions = {
-        from: `"Sistema VAM Operaciones" <${emailUser}>`,
-        to: emailDestino,
-        subject: `Nueva agenda registrada — ${rolLabel}`,
-        html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
-                <div style="background-color: #1a237e; padding: 20px 24px;">
-                    <h2 style="color: #ffffff; margin: 0; font-size: 20px;">Nueva Agenda Registrada</h2>
-                    <p style="color: #c5cae9; margin: 4px 0 0; font-size: 14px;">Sistema VAM Operaciones</p>
-                </div>
-                <div style="padding: 24px;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
-                        <tr>
-                            <td style="padding: 10px 8px; font-weight: bold; color: #555; width: 40%;">Usuario</td>
-                            <td style="padding: 10px 8px; color: #222;">${agenda.usuario || "N/A"}</td>
-                        </tr>
-                        <tr style="background-color: #f5f5f5;">
-                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Rol / Departamento</td>
-                            <td style="padding: 10px 8px; color: #222;">${rolLabel}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Fecha</td>
-                            <td style="padding: 10px 8px; color: #222;">${fechaFormateada}</td>
-                        </tr>
-                        <tr style="background-color: #f5f5f5;">
-                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Hora</td>
-                            <td style="padding: 10px 8px; color: #222;">${agenda.hora || "N/A"}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Domicilio / Lugar</td>
-                            <td style="padding: 10px 8px; color: #222;">${agenda.domicilio || "N/A"}</td>
-                        </tr>
-                        <tr style="background-color: #f5f5f5;">
-                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Actividad</td>
-                            <td style="padding: 10px 8px; color: #222;">${agenda.actividad || "N/A"}</td>
-                        </tr>
-                    </table>
-                </div>
-                <div style="background-color: #f5f5f5; padding: 14px 24px; text-align: center; font-size: 12px; color: #999;">
-                    Este correo fue generado automáticamente por el Sistema VAM Operaciones.
-                </div>
-            </div>
-        `,
-    };
-
-    await enviarCorreo(mailOptions);
-    console.log(`[Mailer] Notificacion enviada a ${emailDestino} (rol: ${agenda.rol})`);
 };
 
 /**
@@ -333,15 +188,14 @@ const enviarNotificacionAgenda = async (agenda) => {
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
-    const brevoKey = obtenerEnv('BREVO_API_KEY');
     const resendKey = obtenerEnv('RESEND_API_KEY');
-    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
+    const emailUser = obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'o.alfaro@vamosamejorar.com');
 
     // Validar variables de entorno requeridas
-    if (!brevoKey && !resendKey && (!emailUser || !emailPass)) {
-        throw new Error('No se han configurado credenciales de correo (definir BREVO_API_KEY, RESEND_API_KEY o EMAIL_USER y EMAIL_PASS en el servidor).');
+    if (!resendKey && (!emailUser || !emailPass)) {
+        throw new Error('No se han configurado credenciales de correo (definir EMAIL_USER y EMAIL_PASS en el servidor).');
     }
     if (!emailDestino) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
 
@@ -364,6 +218,24 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
         mercadotecnia: "Mercadotecnia",
         rh: "Recursos Humanos"
     };
+
+    // Identificar responsable si el reporte pertenece a una persona específica
+    const responsablesUnicos = [...new Set(agendas.map(ag => (ag.nombre || ag.usuario || '').trim()).filter(Boolean))];
+    const rolesUnicos = [...new Set(agendas.map(ag => (ag.rol || '').toLowerCase().trim()).filter(Boolean))];
+    const rolTexto = rolesUnicos.map(r => rolLabel[r] || r.toUpperCase()).join(', ') || 'Operaciones';
+
+    let subject = `Resumen de Agenda — ${fechaInicioFmt} al ${fechaFinFmt}`;
+    let bloqueResponsable = '';
+
+    if (responsablesUnicos.length === 1) {
+        const resp = responsablesUnicos[0];
+        subject = `Resumen de Agenda — ${resp} (${rolTexto}) — ${fechaInicioFmt} al ${fechaFinFmt}`;
+        bloqueResponsable = `
+            <div style="background: rgba(255, 255, 255, 0.15); border-left: 4px solid #60a5fa; border-radius: 4px; padding: 10px 16px; margin-top: 12px;">
+                <span style="color: #ffffff; font-size: 15px; font-weight: 700;">👤 Responsable: ${resp}</span>
+                <span style="color: #c7d2fe; font-size: 13.5px; margin-left: 8px;">(${rolTexto})</span>
+            </div>`;
+    }
 
     const filas = agendas.map((ag, i) => {
         const fechaFmt = parseFechaMX(ag.fecha, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
@@ -389,14 +261,16 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
 
     const mailOptions = {
         from: `"Sistema VAM Operaciones" <${emailUser}>`,
-        replyTo: 'transformacion.digital@vamosamejorar.com',
+        replyTo: emailUser,
         to: emailDestino,
-        subject: `Resumen de Agenda — ${fechaInicioFmt} al ${fechaFinFmt}`,
+        bcc: emailUser, // Respaldo para que transformacion.digital reciba una copia en su buzón de entrada
+        subject: subject,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #283593 100%); padding: 24px 30px;">
                     <h2 style="color: #fff; margin: 0; font-size: 22px;">📅 Resumen de Actividades Agendadas</h2>
-                    <p style="color: #c5cae9; margin: 6px 0 0; font-size: 14px;">
+                    ${bloqueResponsable}
+                    <p style="color: #c5cae9; margin: 8px 0 0; font-size: 14px;">
                         Período: <strong>${fechaInicioFmt}</strong> al <strong>${fechaFinFmt}</strong>
                     </p>
                 </div>
@@ -428,13 +302,12 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
             </div>`
     };
 
-    console.log(`[Mailer] 🚀 Iniciando envío de resumen (${agendas.length} actividades) a: ${emailDestino}...`);
+    console.log(`[Mailer] 🚀 Iniciando envío de resumen (${agendas.length} actividades) a: ${emailDestino} (Asunto: "${subject}")...`);
     await enviarCorreo(mailOptions);
     console.log(`[Mailer] ✅ Resumen de actividades entregado exitosamente a: ${emailDestino}`);
 };
 
 module.exports = {
-    enviarNotificacionAgenda,
     enviarResumenAgendaEmail
 };
 
