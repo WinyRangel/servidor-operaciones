@@ -74,7 +74,7 @@ const resolverHostIPv4 = async (hostname) => {
 };
 
 const crearTransporter = async () => {
-    const rawHost = obtenerEnv('EMAIL_HOST', 'mail.vamosamejorar.com');
+    const rawHost = obtenerEnv('EMAIL_HOST', 'smtp.gmail.com');
     const port = parseInt(obtenerEnv('EMAIL_PORT', '465'));
     const secureVal = obtenerEnv('EMAIL_SECURE', '');
     const isSecure = secureVal !== ''
@@ -89,7 +89,7 @@ const crearTransporter = async () => {
         secure: isSecure,
         auth: {
             user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
-            pass: obtenerEnv('EMAIL_PASS'),
+            pass: obtenerEnv('EMAIL_PASS', 'ejei ksyu etie qwph'),
         },
         tls: {
             servername: rawHost, // Vital para validar el certificado SSL con el nombre real del servidor
@@ -154,8 +154,8 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
         return data;
     }
 
-    // 2. ENVÍO DIRECTO VÍA SMTP INSTITUCIONAL (HostPapa)
-    const hostSmtp = obtenerEnv('EMAIL_HOST', 'mail.vamosamejorar.com');
+    // 2. ENVÍO DIRECTO VÍA SMTP
+    const hostSmtp = obtenerEnv('EMAIL_HOST', 'smtp.gmail.com');
     const portSmtp = obtenerEnv('EMAIL_PORT', '465');
     console.log(`[Mailer] 📧 Enviando vía SMTP (${hostSmtp}:${portSmtp}) desde ${remitenteFinal} a: ${to} (Copia de respaldo: ${bcc || 'N/A'})...`);
     try {
@@ -190,7 +190,7 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
-    const emailPass = obtenerEnv('EMAIL_PASS');
+    const emailPass = obtenerEnv('EMAIL_PASS', 'ejei ksyu etie qwph');
     const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
