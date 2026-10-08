@@ -197,8 +197,8 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
-    const emailPass = obtenerEnv('EMAIL_PASS', 'ejei ksyu etie qwph');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
+    const emailPass = obtenerEnv('EMAIL_PASS', 'atwd ujuh szea pttu');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'transformaciondigitalvam@gmail.com');
 
     // Validar variables de entorno requeridas
     if (!resendKey && (!emailUser || !emailPass)) {
