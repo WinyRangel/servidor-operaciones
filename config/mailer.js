@@ -1,25 +1,3 @@
-const dns = require('dns');
-if (dns.setDefaultResultOrder) {
-    dns.setDefaultResultOrder('ipv4first');
-}
-// En entornos como Render no hay enrutamiento IPv6 saliente.
-// Neutralizar resolve6 previene que cualquier librería intente IPv6.
-if (dns.Resolver && dns.Resolver.prototype) {
-    dns.Resolver.prototype.resolve6 = function (h, o, cb) {
-        const callback = typeof o === 'function' ? o : cb;
-        if (typeof callback === 'function') callback(null, []);
-    };
-}
-if (dns.resolve6) {
-    dns.resolve6 = (h, o, cb) => {
-        const callback = typeof o === 'function' ? o : cb;
-        if (typeof callback === 'function') callback(null, []);
-    };
-}
-
-const fs = require('fs');
-const path = require('path');
-
 const nodemailer = require("nodemailer");
 
 const limpiarValor = (val) => {
@@ -30,7 +8,6 @@ const limpiarValor = (val) => {
 /**
  * Obtiene una variable de entorno de forma segura, ignorando espacios en blanco accidentales
  * tanto en el nombre de la variable (key) como en su valor, con opción de valor por defecto.
- * Además, verifica si fue configurada como Secret File en Render (/etc/secrets/<nombre>).
  */
 const obtenerEnv = (nombre, fallback = '') => {
     if (process.env[nombre] && limpiarValor(process.env[nombre])) {
@@ -40,133 +17,28 @@ const obtenerEnv = (nombre, fallback = '') => {
     if (match && process.env[match] && limpiarValor(process.env[match])) {
         return limpiarValor(process.env[match]);
     }
-    // Revisar si existe como Secret File en Render (/etc/secrets/<nombre>)
-    try {
-        const secretPath = path.join('/etc', 'secrets', nombre);
-        if (fs.existsSync(secretPath)) {
-            const content = limpiarValor(fs.readFileSync(secretPath, 'utf8'));
-            if (content) return content;
-        }
-    } catch (_) { }
-
     return fallback;
 };
 
-/**
- * Resuelve un nombre de host (ej. 'smtp.gmail.com') a su dirección IPv4
- * para evitar que Node.js intente conectarse vía IPv6 en Render/AWS.
- */
-const resolverHostIPv4 = async (hostname) => {
-    if (!hostname) return '142.250.190.108'; // IP de respaldo conocida de smtp.gmail.com
-    // Si ya es una dirección IP numérica IPv4
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
-        return hostname;
-    }
-    try {
-        const addresses = await dns.promises.resolve4(hostname);
-        if (addresses && addresses.length > 0) {
-            return addresses[0];
-        }
-    } catch (err) {
-        console.warn(`[Mailer] No se pudo resolver IPv4 para ${hostname}, usando hostname directo:`, err.message);
-    }
-    return hostname;
-};
-
-const crearTransporter = async () => {
-    const rawHost = obtenerEnv('EMAIL_HOST', 'smtp.gmail.com');
-    const port = parseInt(obtenerEnv('EMAIL_PORT', '465'));
-    const secureVal = obtenerEnv('EMAIL_SECURE', '');
-    const isSecure = secureVal !== ''
-        ? (secureVal.toLowerCase() === 'true')
-        : (port === 465);
-
-    const hostIPv4 = await resolverHostIPv4(rawHost);
-
-    return nodemailer.createTransport({
-        host: hostIPv4,
-        port: port,
-        secure: isSecure,
-        auth: {
-            user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
-            pass: obtenerEnv('EMAIL_PASS', 'ejei ksyu etie qwph'),
-        },
-        tls: {
-            servername: rawHost, // Vital para validar el certificado SSL con el nombre real del servidor
-            rejectUnauthorized: false
-        },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000
-    });
-};
+// Transporter nativo de Gmail usando contraseña de aplicación de Google
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
+        pass: obtenerEnv('EMAIL_PASS', 'atwd ujuh szea pttu'),
+    },
+});
 
 /**
- * Envía un correo utilizando:
- * 1. Resend REST API (HTTPS puerto 443 - opcional si RESEND_API_KEY está configurado)
- * 2. Nodemailer SMTP institucional directo (HostPapa cPanel / puerto 465)
+ * Envía un correo directo de Gmail a Gmail usando Nodemailer
  */
 const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => {
-    const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const remitenteFinal = from || `"Sistema VAM Operaciones" <${emailUser}>`;
     const replyToFinal = replyTo || emailUser;
 
-    // 1. RESEND API (HTTPS - puerto 443, solo si está explícitamente configurado)
-    if (resendKey) {
-        console.log(`[Mailer] 🌐 Enviando vía Resend REST API (HTTPS) a: ${to}...`);
-        const destinatarios = (Array.isArray(to) ? to : to.split(','))
-            .map(e => e.trim())
-            .filter(Boolean);
-
-        let fromAddress = obtenerEnv('RESEND_FROM', '');
-        // Resend no permite enviar desde @gmail.com sin dominio verificado.
-        // Si no se definió RESEND_FROM o contiene @gmail.com, se usa el remitente oficial de Resend con alias representativo:
-        if (!fromAddress || fromAddress.includes('@gmail.com')) {
-            fromAddress = 'Sistema VAM Operaciones <onboarding@resend.dev>';
-        }
-
-        const body = {
-            from: fromAddress,
-            to: destinatarios,
-            subject: subject,
-            html: html,
-            ...(text ? { text: text } : {})
-        };
-        if (replyToFinal) {
-            body.reply_to = replyToFinal;
-        }
-        // En sandbox de Resend (onboarding@resend.dev) BCC a otra cuenta causa error 403
-        const esSandbox = fromAddress.includes('resend.dev');
-        if (bcc && !esSandbox) {
-            body.bcc = Array.isArray(bcc) ? bcc : [bcc];
-        }
-
-        const res = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${resendKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(body)
-        });
-
-        if (!res.ok) {
-            const errData = await res.text();
-            throw new Error(`Error en API de Resend (${res.status}): ${errData}`);
-        }
-
-        const data = await res.json();
-        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Resend API. ID: ${data.id || JSON.stringify(data)}`);
-        return data;
-    }
-
-    // 2. ENVÍO DIRECTO VÍA SMTP
-    const hostSmtp = obtenerEnv('EMAIL_HOST', 'smtp.gmail.com');
-    const portSmtp = obtenerEnv('EMAIL_PORT', '465');
-    console.log(`[Mailer] 📧 Enviando vía SMTP (${hostSmtp}:${portSmtp}) desde ${remitenteFinal} a: ${to} (Copia de respaldo: ${bcc || 'N/A'})...`);
+    console.log(`[Mailer] 📧 Enviando correo vía Gmail desde ${remitenteFinal} a: ${to}...`);
     try {
-        const transporter = await crearTransporter();
         const mailPayload = {
             from: remitenteFinal,
             to: to,
@@ -179,11 +51,11 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
             mailPayload.bcc = bcc;
         }
         const info = await transporter.sendMail(mailPayload);
-        console.log(`[Mailer] ✅ Correo entregado exitosamente al servidor SMTP para: ${to} (MessageId: ${info.messageId})`);
+        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Gmail para: ${to} (MessageId: ${info.messageId})`);
         return info;
-    } catch (smtpErr) {
-        console.error('[Mailer] ❌ Error al enviar correo vía SMTP:', smtpErr);
-        throw smtpErr;
+    } catch (err) {
+        console.error('[Mailer] ❌ Error al enviar correo vía Gmail:', err);
+        throw err;
     }
 };
 
@@ -195,13 +67,12 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
-    const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
     const emailPass = obtenerEnv('EMAIL_PASS', 'atwd ujuh szea pttu');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'transformaciondigitalvam@gmail.com');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
-    if (!resendKey && (!emailUser || !emailPass)) {
+    if (!emailUser || !emailPass) {
         throw new Error('No se han configurado credenciales de correo (definir EMAIL_USER y EMAIL_PASS en el servidor).');
     }
     if (!emailDestino) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
@@ -270,7 +141,7 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
         from: `"Sistema VAM Operaciones" <${emailUser}>`,
         replyTo: emailUser,
         to: emailDestino,
-        bcc: emailUser, // Respaldo para que transformacion.digital reciba una copia en su buzón de entrada
+        bcc: emailUser, // Copia de respaldo para la cuenta emisora
         subject: subject,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
@@ -315,6 +186,6 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
 };
 
 module.exports = {
+    transporter,
     enviarResumenAgendaEmail
 };
-
