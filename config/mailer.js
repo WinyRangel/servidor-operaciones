@@ -36,6 +36,89 @@ const obtenerConfiguracionTransporter = () => {
 const transporter = nodemailer.createTransport(obtenerConfiguracionTransporter());
 
 /**
+ * Función central para despachar correos:
+ * 1. Si existe GMAIL_WEBHOOK_URL (Google Apps Script HTTPS puerto 443) -> Envía nativo por Gmail sin bloqueo.
+ * 2. Si existe BREVO_API_KEY -> Envía vía Brevo REST API (HTTPS puerto 443).
+ * 3. Fallback: SMTP directo con Nodemailer (funciona en local).
+ */
+const enviarCorreo = async ({ from, to, subject, html, text }) => {
+    const gmailWebhook = (process.env.GMAIL_WEBHOOK_URL || '').trim();
+    const brevoKey = (process.env.BREVO_API_KEY || '').trim();
+    const emailUser = (process.env.EMAIL_USER || 'transformaciondigitalvam@gmail.com').trim();
+    const emailDestino = to || (process.env.EMAIL_DESTINO || 'danielamanzanorangel@gmail.com').trim();
+
+    // 1. VÍA GOOGLE APPS SCRIPT WEBHOOK (HTTPS - PUERTO 443, NATIVO GMAIL, 0 BLOQUEOS EN RENDER)
+    if (gmailWebhook) {
+        console.log(`[Mailer] 🌐 Enviando vía Google Apps Script (HTTPS 443) a: ${emailDestino}...`);
+        const resp = await fetch(gmailWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: emailDestino,
+                subject: subject,
+                html: html,
+                text: text || ''
+            })
+        });
+        const respText = await resp.text();
+        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Google Apps Script:`, respText);
+        return { success: true, via: 'google-script', response: respText };
+    }
+
+    // 2. VÍA BREVO REST API (HTTPS - PUERTO 443)
+    if (brevoKey) {
+        console.log(`[Mailer] 🌐 Enviando vía Brevo API (HTTPS 443) a: ${emailDestino}...`);
+        const destinatarios = (Array.isArray(emailDestino) ? emailDestino : emailDestino.split(','))
+            .map(e => ({ email: e.trim() }))
+            .filter(d => d.email);
+
+        const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': brevoKey,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                sender: { name: 'Sistema VAM Operaciones', email: emailUser },
+                to: destinatarios,
+                subject: subject,
+                htmlContent: html,
+                textContent: text || ''
+            })
+        });
+
+        if (!resp.ok) {
+            const errData = await resp.text();
+            throw new Error(`Error en API de Brevo (${resp.status}): ${errData}`);
+        }
+
+        const data = await resp.json();
+        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Brevo API:`, data);
+        return data;
+    }
+
+    // 3. VÍA NODEMAILER SMTP DIRECTO
+    console.log(`[Mailer] 📧 Enviando vía Nodemailer SMTP (${process.env.EMAIL_HOST || 'smtp.gmail.com'}:465) a: ${emailDestino}...`);
+    try {
+        const info = await transporter.sendMail({
+            from: from || `"Sistema VAM Operaciones" <${emailUser}>`,
+            to: emailDestino,
+            subject: subject,
+            html: html,
+            text: text
+        });
+        console.log(`[Mailer] ✅ Correo entregado exitosamente vía SMTP (MessageId: ${info.messageId})`);
+        return info;
+    } catch (smtpErr) {
+        if (smtpErr.message && (smtpErr.message.includes('timeout') || smtpErr.code === 'ETIMEDOUT')) {
+            throw new Error('Connection timeout: Render bloquea puertos SMTP (465/587). Configura GMAIL_WEBHOOK_URL en Render para enviar por HTTPS (puerto 443).');
+        }
+        throw smtpErr;
+    }
+};
+
+/**
  * Envía un correo de notificación cuando se registra una nueva agenda
  * para los roles: auditoria, mercadotecnia, rh.
  *
@@ -125,7 +208,7 @@ const enviarNotificacionAgenda = async (agenda) => {
         `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await enviarCorreo(mailOptions);
     console.log(`[Mailer] Notificacion enviada a ${emailDestino} (rol: ${agenda.rol})`);
 };
 
@@ -233,12 +316,13 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
             </div>`
     };
 
-    await transporter.sendMail(mailOptions);
+    await enviarCorreo(mailOptions);
     console.log(`[Mailer] Resumen de agenda enviado a ${emailDestino} (${agendas.length} actividades)`);
 };
 
 module.exports = {
     transporter,
+    enviarCorreo,
     enviarNotificacionAgenda,
     enviarResumenAgendaEmail
 };
