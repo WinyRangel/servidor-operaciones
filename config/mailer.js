@@ -119,7 +119,12 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
             .map(e => e.trim())
             .filter(Boolean);
 
-        const fromAddress = obtenerEnv('RESEND_FROM', '') || remitenteFinal;
+        let fromAddress = obtenerEnv('RESEND_FROM', '');
+        // Resend no permite enviar desde @gmail.com sin dominio verificado.
+        // Si no se definió RESEND_FROM o contiene @gmail.com, se usa el remitente oficial de Resend con alias representativo:
+        if (!fromAddress || fromAddress.includes('@gmail.com')) {
+            fromAddress = 'Sistema VAM Operaciones <onboarding@resend.dev>';
+        }
 
         const body = {
             from: fromAddress,
@@ -131,7 +136,9 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
         if (replyToFinal) {
             body.reply_to = replyToFinal;
         }
-        if (bcc) {
+        // En sandbox de Resend (onboarding@resend.dev) BCC a otra cuenta causa error 403
+        const esSandbox = fromAddress.includes('resend.dev');
+        if (bcc && !esSandbox) {
             body.bcc = Array.isArray(bcc) ? bcc : [bcc];
         }
 
