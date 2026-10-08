@@ -1,13 +1,39 @@
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
 const nodemailer = require("nodemailer");
 
-// Transporter de Gmail usando contraseña de aplicación
-const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-        user: process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com",
-        pass: process.env.EMAIL_PASS || "atwd ujuh szea pttu",
-    },
-});
+// Configuración del transporter forzando IPv4 (family: 4) en port 465 (SSL) para evitar ENETUNREACH en Render
+const obtenerConfiguracionTransporter = () => {
+    const user = (process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com").trim();
+    const pass = (process.env.EMAIL_PASS || "atwd ujuh szea pttu").trim();
+    const host = (process.env.EMAIL_HOST || "smtp.gmail.com").trim();
+    const port = Number(process.env.EMAIL_PORT) || 465;
+    const secure = process.env.EMAIL_SECURE !== undefined
+        ? (process.env.EMAIL_SECURE === "true" || process.env.EMAIL_SECURE === true)
+        : port === 465;
+
+    return {
+        host,
+        port,
+        secure,
+        family: 4, // CRÍTICO: Forzar IPv4 para evitar ENETUNREACH en contenedores Linux / Render
+        auth: {
+            user,
+            pass
+        },
+        tls: {
+            rejectUnauthorized: false
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000
+    };
+};
+
+const transporter = nodemailer.createTransport(obtenerConfiguracionTransporter());
 
 /**
  * Envía un correo de notificación cuando se registra una nueva agenda
@@ -51,8 +77,8 @@ const enviarNotificacionAgenda = async (agenda) => {
         rh: "Recursos Humanos (RH)",
     }[(agenda.rol || "").toLowerCase().trim()] || agenda.rol;
 
-    const emailUser = process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com";
-    const emailDestino = process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com";
+    const emailUser = (process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com").trim();
+    const emailDestino = (process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com").trim();
 
     const mailOptions = {
         from: `"Sistema VAM Operaciones" <${emailUser}>`,
@@ -133,8 +159,8 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const emitidoEn = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
 
     const responsable = agendas[0]?.nombre || agendas[0]?.usuario || 'Usuario';
-    const emailRemitente = process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com";
-    const emailDestino = process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com";
+    const emailRemitente = (process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com").trim();
+    const emailDestino = (process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com").trim();
 
     const rolLabel = {
         auditoria: "Auditoría",
