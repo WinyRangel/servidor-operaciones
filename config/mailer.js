@@ -1,3 +1,8 @@
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
 const nodemailer = require("nodemailer");
 
 const limpiarValor = (val) => {
@@ -20,9 +25,12 @@ const obtenerEnv = (nombre, fallback = '') => {
     return fallback;
 };
 
-// Transporter nativo de Gmail usando contraseña de aplicación de Google
+// Transporter nativo de Gmail forzando IPv4 (family: 4) para evitar ENETUNREACH de IPv6 en Render
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    family: 4,
     auth: {
         user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
         pass: obtenerEnv('EMAIL_PASS', 'atwd ujuh szea pttu'),
