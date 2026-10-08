@@ -1,70 +1,103 @@
-const dns = require('dns');
-if (dns.setDefaultResultOrder) {
-    dns.setDefaultResultOrder('ipv4first');
-}
-
 const nodemailer = require("nodemailer");
 
-const limpiarValor = (val) => {
-    if (!val) return '';
-    return String(val).replace(/^["']|["']$/g, '').trim();
-};
-
-/**
- * Obtiene una variable de entorno de forma segura, ignorando espacios en blanco accidentales
- * tanto en el nombre de la variable (key) como en su valor, con opción de valor por defecto.
- */
-const obtenerEnv = (nombre, fallback = '') => {
-    if (process.env[nombre] && limpiarValor(process.env[nombre])) {
-        return limpiarValor(process.env[nombre]);
-    }
-    const match = Object.keys(process.env).find(k => k.trim().toUpperCase() === nombre.toUpperCase());
-    if (match && process.env[match] && limpiarValor(process.env[match])) {
-        return limpiarValor(process.env[match]);
-    }
-    return fallback;
-};
-
-// Transporter nativo de Gmail forzando IPv4 (family: 4) para evitar ENETUNREACH de IPv6 en Render
+// Transporter de Gmail usando contraseña de aplicación
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    family: 4,
+    service: "gmail",
     auth: {
-        user: obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com'),
-        pass: obtenerEnv('EMAIL_PASS', 'atwd ujuh szea pttu'),
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
     },
 });
 
 /**
- * Envía un correo directo de Gmail a Gmail usando Nodemailer
+ * Envía un correo de notificación cuando se registra una nueva agenda
+ * para los roles: auditoria, mercadotecnia, rh.
+ *
+ * @param {Object} agenda - Datos de la agenda guardada
  */
-const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => {
-    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
-    const remitenteFinal = from || `"Sistema VAM Operaciones" <${emailUser}>`;
-    const replyToFinal = replyTo || emailUser;
+const enviarNotificacionAgenda = async (agenda) => {
+    const rolesNotificar = ["auditoria", "mercadotecnia", "rh"];
 
-    console.log(`[Mailer] 📧 Enviando correo vía Gmail desde ${remitenteFinal} a: ${to}...`);
-    try {
-        const mailPayload = {
-            from: remitenteFinal,
-            to: to,
-            subject: subject,
-            html: html,
-            text: text,
-            replyTo: replyToFinal
-        };
-        if (bcc) {
-            mailPayload.bcc = bcc;
-        }
-        const info = await transporter.sendMail(mailPayload);
-        console.log(`[Mailer] ✅ Correo entregado exitosamente vía Gmail para: ${to} (MessageId: ${info.messageId})`);
-        return info;
-    } catch (err) {
-        console.error('[Mailer] ❌ Error al enviar correo vía Gmail:', err);
-        throw err;
+    if (!rolesNotificar.includes((agenda.rol || "").toLowerCase().trim())) {
+        return; // No aplica notificación para este rol
     }
+
+    let fechaFormateada = "N/A";
+    if (agenda.fecha) {
+        const raw = typeof agenda.fecha === "string" ? agenda.fecha.substring(0, 10) : new Date(agenda.fecha).toISOString().substring(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            const [y, m, d] = raw.split("-").map(Number);
+            fechaFormateada = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toLocaleDateString("es-MX", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "America/Mexico_City",
+            });
+        } else {
+            fechaFormateada = new Date(agenda.fecha).toLocaleDateString("es-MX", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "America/Mexico_City",
+            });
+        }
+    }
+
+    const rolLabel = {
+        auditoria: "Auditoría",
+        mercadotecnia: "Mercadotecnia",
+        rh: "Recursos Humanos (RH)",
+    }[(agenda.rol || "").toLowerCase().trim()] || agenda.rol;
+
+    const mailOptions = {
+        from: `"Sistema VAM Operaciones" <${process.env.EMAIL_USER}>`,
+        to: process.env.EMAIL_DESTINO,
+        subject: `Nueva agenda registrada — ${rolLabel}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+                <div style="background-color: #1a237e; padding: 20px 24px;">
+                    <h2 style="color: #ffffff; margin: 0; font-size: 20px;">Nueva Agenda Registrada</h2>
+                    <p style="color: #c5cae9; margin: 4px 0 0; font-size: 14px;">Sistema VAM Operaciones</p>
+                </div>
+                <div style="padding: 24px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+                        <tr>
+                            <td style="padding: 10px 8px; font-weight: bold; color: #555; width: 40%;">Usuario</td>
+                            <td style="padding: 10px 8px; color: #222;">${agenda.usuario || "N/A"}</td>
+                        </tr>
+                        <tr style="background-color: #f5f5f5;">
+                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Rol / Departamento</td>
+                            <td style="padding: 10px 8px; color: #222;">${rolLabel}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Fecha</td>
+                            <td style="padding: 10px 8px; color: #222;">${fechaFormateada}</td>
+                        </tr>
+                        <tr style="background-color: #f5f5f5;">
+                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Hora</td>
+                            <td style="padding: 10px 8px; color: #222;">${agenda.hora || "N/A"}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Domicilio / Lugar</td>
+                            <td style="padding: 10px 8px; color: #222;">${agenda.domicilio || "N/A"}</td>
+                        </tr>
+                        <tr style="background-color: #f5f5f5;">
+                            <td style="padding: 10px 8px; font-weight: bold; color: #555;">Actividad</td>
+                            <td style="padding: 10px 8px; color: #222;">${agenda.actividad || "N/A"}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div style="background-color: #f5f5f5; padding: 14px 24px; text-align: center; font-size: 12px; color: #999;">
+                    Este correo fue generado automáticamente por el Sistema VAM Operaciones.
+                </div>
+            </div>
+        `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`[Mailer] Notificacion enviada a ${process.env.EMAIL_DESTINO} (rol: ${agenda.rol})`);
 };
 
 /**
@@ -75,16 +108,6 @@ const enviarCorreo = async ({ from, to, subject, html, text, replyTo, bcc }) => 
  * @param {string} fechaFin - Fecha final del rango
  */
 const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
-    const emailUser = obtenerEnv('EMAIL_USER', 'transformaciondigitalvam@gmail.com');
-    const emailPass = obtenerEnv('EMAIL_PASS', 'atwd ujuh szea pttu');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
-
-    // Validar variables de entorno requeridas
-    if (!emailUser || !emailPass) {
-        throw new Error('No se han configurado credenciales de correo (definir EMAIL_USER y EMAIL_PASS en el servidor).');
-    }
-    if (!emailDestino) throw new Error('Variable de entorno EMAIL_DESTINO no definida en el servidor.');
-
     const parseFechaMX = (f, opts) => {
         if (!f) return "N/A";
         const raw = typeof f === "string" ? f.substring(0, 10) : new Date(f).toISOString().substring(0, 10);
@@ -104,24 +127,6 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
         mercadotecnia: "Mercadotecnia",
         rh: "Recursos Humanos"
     };
-
-    // Identificar responsable si el reporte pertenece a una persona específica
-    const responsablesUnicos = [...new Set(agendas.map(ag => (ag.nombre || ag.usuario || '').trim()).filter(Boolean))];
-    const rolesUnicos = [...new Set(agendas.map(ag => (ag.rol || '').toLowerCase().trim()).filter(Boolean))];
-    const rolTexto = rolesUnicos.map(r => rolLabel[r] || r.toUpperCase()).join(', ') || 'Operaciones';
-
-    let subject = `Resumen de Agenda — ${fechaInicioFmt} al ${fechaFinFmt}`;
-    let bloqueResponsable = '';
-
-    if (responsablesUnicos.length === 1) {
-        const resp = responsablesUnicos[0];
-        subject = `Resumen de Agenda — ${resp} (${rolTexto}) — ${fechaInicioFmt} al ${fechaFinFmt}`;
-        bloqueResponsable = `
-            <div style="background: rgba(255, 255, 255, 0.15); border-left: 4px solid #60a5fa; border-radius: 4px; padding: 10px 16px; margin-top: 12px;">
-                <span style="color: #ffffff; font-size: 15px; font-weight: 700;">👤 Responsable: ${resp}</span>
-                <span style="color: #c7d2fe; font-size: 13.5px; margin-left: 8px;">(${rolTexto})</span>
-            </div>`;
-    }
 
     const filas = agendas.map((ag, i) => {
         const fechaFmt = parseFechaMX(ag.fecha, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
@@ -146,17 +151,14 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     }).join("");
 
     const mailOptions = {
-        from: `"Sistema VAM Operaciones" <${emailUser}>`,
-        replyTo: emailUser,
-        to: emailDestino,
-        bcc: emailUser, // Copia de respaldo para la cuenta emisora
-        subject: subject,
+        from: `"Sistema VAM Operaciones" <${process.env.EMAIL_USER}>`,
+        to: process.env.EMAIL_DESTINO,
+        subject: `Resumen de Agenda — ${fechaInicioFmt} al ${fechaFinFmt}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #283593 100%); padding: 24px 30px;">
                     <h2 style="color: #fff; margin: 0; font-size: 22px;">📅 Resumen de Actividades Agendadas</h2>
-                    ${bloqueResponsable}
-                    <p style="color: #c5cae9; margin: 8px 0 0; font-size: 14px;">
+                    <p style="color: #c5cae9; margin: 6px 0 0; font-size: 14px;">
                         Período: <strong>${fechaInicioFmt}</strong> al <strong>${fechaFinFmt}</strong>
                     </p>
                 </div>
@@ -188,12 +190,12 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
             </div>`
     };
 
-    console.log(`[Mailer] 🚀 Iniciando envío de resumen (${agendas.length} actividades) a: ${emailDestino} (Asunto: "${subject}")...`);
-    await enviarCorreo(mailOptions);
-    console.log(`[Mailer] ✅ Resumen de actividades entregado exitosamente a: ${emailDestino}`);
+    await transporter.sendMail(mailOptions);
+    console.log(`[Mailer] Resumen de agenda enviado a ${process.env.EMAIL_DESTINO} (${agendas.length} actividades)`);
 };
 
 module.exports = {
     transporter,
+    enviarNotificacionAgenda,
     enviarResumenAgendaEmail
 };
