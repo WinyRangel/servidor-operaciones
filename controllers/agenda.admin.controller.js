@@ -388,7 +388,7 @@ exports.enviarResumenAgenda = async (req, res) => {
         for (const [responsable, listaAgendas] of gruposPorUsuario.entries()) {
             await enviarResumenAgendaEmail(listaAgendas, fechaInicio, fechaFin);
             totalEnviados++;
-            console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo (${totalEnviados}/${gruposPorUsuario.size}) con ${listaAgendas.length} actividad(es) de '${responsable}' enviado exitosamente a: ${process.env.EMAIL_DESTINO || 'o.alfaro@vamosamejorar.com'}`);
+            console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo (${totalEnviados}/${gruposPorUsuario.size}) con ${listaAgendas.length} actividad(es) de '${responsable}' enviado exitosamente a: ${process.env.EMAIL_DESTINO || 'danielamanzanorangel@gmail.com'}`);
         }
 
         res.status(200).json({

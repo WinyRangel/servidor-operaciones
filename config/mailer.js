@@ -191,7 +191,7 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const resendKey = obtenerEnv('RESEND_API_KEY');
     const emailUser = obtenerEnv('EMAIL_USER', 'transformacion.digital@vamosamejorar.com');
     const emailPass = obtenerEnv('EMAIL_PASS');
-    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'o.alfaro@vamosamejorar.com');
+    const emailDestino = obtenerEnv('EMAIL_DESTINO', 'danielamanzanorangel@gmail.com');
 
     // Validar variables de entorno requeridas
     if (!resendKey && (!emailUser || !emailPass)) {
