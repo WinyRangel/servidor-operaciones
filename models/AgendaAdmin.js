@@ -43,4 +43,8 @@ const AgendaAdminSchema = new mongoose.Schema({
 });
 
 
+AgendaAdminSchema.index({ fecha: 1, hora: 1 });
+AgendaAdminSchema.index({ usuario: 1, rol: 1, semana: 1 });
+AgendaAdminSchema.index({ semana: 1 });
+
 module.exports = mongoose.model('AgendaAdmin', AgendaAdminSchema);
