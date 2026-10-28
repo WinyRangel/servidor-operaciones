@@ -62,12 +62,14 @@ const obtenerAgendas = async (req, res) => {
     // Si es asesor → solo su agenda
     if (user.rol === "asesor") {
       agendas = await AgendaAsesor.find({ asesor: user.usuario })
-        .sort({ fecha: 1, hora: 1 });
+        .sort({ fecha: 1, hora: 1 })
+        .lean();
 
       // Si es coordinador → todas las agendas de su coordinación
     } else if (user.rol === "coordinador") {
       agendas = await AgendaAsesor.find({ coordinacion: user.coordinacion })
-        .sort({ fecha: 1, hora: 1 });
+        .sort({ fecha: 1, hora: 1 })
+        .lean();
 
     } else {
       return res.status(403).json({
