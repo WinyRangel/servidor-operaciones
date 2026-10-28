@@ -39,4 +39,8 @@ const AgendaAsesorSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+AgendaAsesorSchema.index({ fecha: 1, hora: 1 });
+AgendaAsesorSchema.index({ asesor: 1, coordinacion: 1, semana: 1 });
+AgendaAsesorSchema.index({ semana: 1 });
+
 module.exports = mongoose.model('AgendaAsesor', AgendaAsesorSchema);
