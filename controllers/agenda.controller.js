@@ -130,7 +130,8 @@ const Agenda = require ('../models/Agenda');
   const obtenerAgenda = async (req, res) => {
     try {
       const agendas = await Agenda.find()
-        .sort({ fecha: 1, hora: 1 }); // fecha descendente, luego hora descendente
+        .sort({ fecha: 1, hora: 1 })
+        .lean();
 
       res.status(200).json(agendas);
     } catch (error) {
@@ -192,10 +193,14 @@ const Agenda = require ('../models/Agenda');
 
       if (req.user.rol === 'coordinador') {
         // Filtrar solo las del coordinador logueado
-        agendas = await Agenda.find({ coordinador: req.user.usuario });
+        agendas = await Agenda.find({ coordinador: req.user.usuario })
+          .sort({ fecha: 1, hora: 1 })
+          .lean();
       } else {
         // admin y sup ven todo
-        agendas = await Agenda.find();
+        agendas = await Agenda.find()
+          .sort({ fecha: 1, hora: 1 })
+          .lean();
       }
 
       res.status(200).json(agendas);
