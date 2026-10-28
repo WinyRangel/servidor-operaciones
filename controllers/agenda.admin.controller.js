@@ -46,6 +46,54 @@ const obtenerUsuarioYRol = (req) => {
 };
 
 // =========================================================================
+// Funciones auxiliares para resolución de nombres reales de usuario con caché
+// =========================================================================
+let cacheMapaNombres = null;
+let cacheMapaNombresTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+const construirMapaNombres = async (forceRefresh = false) => {
+    const ahora = Date.now();
+    if (!forceRefresh && cacheMapaNombres && (ahora - cacheMapaNombresTimestamp < CACHE_TTL_MS)) {
+        return cacheMapaNombres;
+    }
+    try {
+        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
+        const mapa = new Map();
+        for (const u of usuarios) {
+            const uLogin = (u.usuario || '').trim().toLowerCase();
+            const uNom = (u.nombre || '').trim();
+            if (uLogin && uNom) {
+                mapa.set(uLogin, uNom);
+            }
+            if (uNom) {
+                mapa.set(uNom.toLowerCase(), uNom);
+            }
+        }
+        cacheMapaNombres = mapa;
+        cacheMapaNombresTimestamp = ahora;
+        return mapa;
+    } catch (e) {
+        return cacheMapaNombres || new Map();
+    }
+};
+
+const resolverNombreCompleto = (mapaNombres, usuarioStr, nombreStr) => {
+    const u = (usuarioStr || '').trim();
+    const n = (nombreStr || '').trim();
+    // Prioridad 1: Buscar si el usuario o nombre existe en la base de datos de usuarios
+    const delMapa = mapaNombres.get(u.toLowerCase()) || mapaNombres.get(n.toLowerCase());
+    if (delMapa) {
+        return delMapa;
+    }
+    // Prioridad 2: Si el campo nombre guardado es diferente al username
+    if (n && n.toLowerCase() !== u.toLowerCase()) {
+        return n;
+    }
+    return n || u || 'Sin asignar';
+};
+
+// =========================================================================
 // Crear agenda (Permite a mercadotecnia, auditoria, rh, admin y sup)
 // =========================================================================
 exports.crearAgendaAdmin = async (req, res) => {
@@ -211,13 +259,12 @@ exports.obtenerAgendasAdmin = async (req, res) => {
 
         const agendas = await AgendaAdmin.find(filtro).sort({ fecha: 1, hora: 1, createdAt: 1 }).lean();
 
-        // Enriquecer registros anteriores que no tengan guardado el campo nombre
-        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
-        const mapaNombres = new Map(usuarios.map(u => [(u.usuario || '').toLowerCase(), u.nombre || u.usuario]));
+        // Enriquecer registros anteriores con nombre real de usuario
+        const mapaNombres = await construirMapaNombres();
 
         const agendasConNombre = agendas.map(ag => ({
             ...ag,
-            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar'
+            nombre: resolverNombreCompleto(mapaNombres, ag.usuario, ag.nombre)
         }));
 
         res.status(200).json({
