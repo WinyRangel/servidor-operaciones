@@ -437,7 +437,7 @@ exports.enviarResumenAgenda = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: `Resumen de agenda enviado exitosamente desde ${remitenteFinal} a ${destinoFinal} (${agendasConNombre.length} actividades).`,
+            message: `Resumen de agenda enviado exitosamente a o.alfaro@vamosamejorar.com (${agendasConNombre.length} actividades).`,
             remitente: remitenteFinal,
             destinatario: destinoFinal,
             total: agendasConNombre.length
