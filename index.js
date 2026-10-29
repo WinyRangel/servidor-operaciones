@@ -28,8 +28,10 @@ try {
 const nodemailer = require("nodemailer");
 const express = require('express');
 const conectarDB = require('./config/db');
+const compression = require('compression');
 const cors = require("cors");
 const app = express();
+app.use(compression());
 conectarDB();
 
 // para localhost y producción

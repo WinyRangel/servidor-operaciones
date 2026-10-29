@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 const { enviarResumenAgendaEmail } = require('../config/mailer');
 
 const SECRET_KEY = '123VAM!!'; // Misma clave secreta de autenticación
-const ROLES_PERMITIDOS = ['admin', 'sup', 'mercadotecnia', 'auditoria', 'rh'];
+const ROLES_PERMITIDOS = ['admin', 'sup', 'mercadotecnia', 'auditoria', 'rh', 'admin-audi'];
 
 // Función auxiliar para extraer datos del usuario autenticado (desde req.user, JWT header o body)
 const obtenerUsuarioYRol = (req) => {
@@ -43,6 +43,54 @@ const obtenerUsuarioYRol = (req) => {
     }
 
     return { usuario, nombre, rol };
+};
+
+// =========================================================================
+// Funciones auxiliares para resolución de nombres reales de usuario con caché
+// =========================================================================
+let cacheMapaNombres = null;
+let cacheMapaNombresTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+const construirMapaNombres = async (forceRefresh = false) => {
+    const ahora = Date.now();
+    if (!forceRefresh && cacheMapaNombres && (ahora - cacheMapaNombresTimestamp < CACHE_TTL_MS)) {
+        return cacheMapaNombres;
+    }
+    try {
+        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
+        const mapa = new Map();
+        for (const u of usuarios) {
+            const uLogin = (u.usuario || '').trim().toLowerCase();
+            const uNom = (u.nombre || '').trim();
+            if (uLogin && uNom) {
+                mapa.set(uLogin, uNom);
+            }
+            if (uNom) {
+                mapa.set(uNom.toLowerCase(), uNom);
+            }
+        }
+        cacheMapaNombres = mapa;
+        cacheMapaNombresTimestamp = ahora;
+        return mapa;
+    } catch (e) {
+        return cacheMapaNombres || new Map();
+    }
+};
+
+const resolverNombreCompleto = (mapaNombres, usuarioStr, nombreStr) => {
+    const u = (usuarioStr || '').trim();
+    const n = (nombreStr || '').trim();
+    // Prioridad 1: Buscar si el usuario o nombre existe en la base de datos de usuarios
+    const delMapa = mapaNombres.get(u.toLowerCase()) || mapaNombres.get(n.toLowerCase());
+    if (delMapa) {
+        return delMapa;
+    }
+    // Prioridad 2: Si el campo nombre guardado es diferente al username
+    if (n && n.toLowerCase() !== u.toLowerCase()) {
+        return n;
+    }
+    return n || u || 'Sin asignar';
 };
 
 // =========================================================================
@@ -156,10 +204,21 @@ exports.obtenerAgendasAdmin = async (req, res) => {
 
         const filtro = {};
         const rolConsultante = (userRol || '').toLowerCase().trim();
+        const userNombreLower = (userNombre || '').toLowerCase().trim();
+        const esAdminAudi = rolConsultante === 'admin-audi' || userNombreLower === 'admin-audi';
         const esAdminOSup = ['admin', 'sup'].includes(rolConsultante);
 
-        // Si no es admin ni supervisor, forzar restricción a su propio usuario
-        if (!esAdminOSup && userNombre) {
+        // Si es admin-audi, aislar estrictamente a agendas de auditoría
+        if (esAdminAudi) {
+            filtro.rol = 'auditoria';
+            if (usuario) {
+                filtro.$or = [
+                    { usuario: new RegExp(`^${usuario}$`, 'i') },
+                    { nombre: new RegExp(`^${usuario}$`, 'i') }
+                ];
+            }
+        } else if (!esAdminOSup && userNombre) {
+            // Si no es admin ni supervisor, forzar restricción a su propio usuario
             let nombreUsuario = userNombre;
             try {
                 const uDoc = await Usuario.findOne({ usuario: new RegExp(`^${userNombre}$`, 'i') }).lean();
@@ -211,13 +270,12 @@ exports.obtenerAgendasAdmin = async (req, res) => {
 
         const agendas = await AgendaAdmin.find(filtro).sort({ fecha: 1, hora: 1, createdAt: 1 }).lean();
 
-        // Enriquecer registros anteriores que no tengan guardado el campo nombre
-        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
-        const mapaNombres = new Map(usuarios.map(u => [(u.usuario || '').toLowerCase(), u.nombre || u.usuario]));
+        // Enriquecer registros anteriores con nombre real de usuario
+        const mapaNombres = await construirMapaNombres();
 
         const agendasConNombre = agendas.map(ag => ({
             ...ag,
-            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar'
+            nombre: resolverNombreCompleto(mapaNombres, ag.usuario, ag.nombre)
         }));
 
         res.status(200).json({
@@ -360,25 +418,28 @@ exports.enviarResumenAgenda = async (req, res) => {
         }
 
         // Enriquecer registros con nombre real de usuario
-        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
-        const mapaNombres = new Map(usuarios.map(u => [(u.usuario || '').toLowerCase(), u.nombre || u.usuario]));
+        const mapaNombres = await construirMapaNombres();
 
         const agendasConNombre = agendas.map(ag => ({
             ...ag,
-            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || usuarioObjetivo || 'Sin asignar'
+            nombre: resolverNombreCompleto(mapaNombres, ag.usuario, ag.nombre) || usuarioObjetivo || 'Sin asignar'
         }));
 
         const ahora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
-        const destinoFinal = process.env.EMAIL_DESTINO || 'danielamanzanorangel@gmail.com';
-        console.log(`[AGENDA-CORREO][${ahora}] 📤 Enviando reporte de ${agendasConNombre.length} actividad(es) del usuario '${usuarioObjetivo || 'VAM'}' hacia: ${destinoFinal}`);
+        const remitenteFinal = (process.env.EMAIL_USER || 'transformacion.digital@vamosamejorar.com').trim();
+        const destinoFinal = (process.env.EMAIL_DESTINO || 'o.alfaro@vamosamejorar.com').trim();
+        const ccFinal = (process.env.EMAIL_CC || 'transformacion.digital@vamosamejorar.com').trim();
+        console.log(`[AGENDA-CORREO][${ahora}] 📤 Enviando reporte de ${agendasConNombre.length} actividad(es) del usuario '${usuarioObjetivo || 'VAM'}' de '${remitenteFinal}' hacia: '${destinoFinal}' (CC: ${ccFinal})`);
 
         await enviarResumenAgendaEmail(agendasConNombre, fechaInicio, fechaFin);
 
-        console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo con ${agendasConNombre.length} actividad(es) enviado exitosamente a: ${destinoFinal}`);
+        console.log(`[AGENDA-CORREO][${ahora}] ✅ Correo con ${agendasConNombre.length} actividad(es) enviado exitosamente a: ${destinoFinal} (CC: ${ccFinal})`);
 
         res.status(200).json({
             success: true,
-            message: `Resumen de agenda enviado exitosamente (${agendasConNombre.length} actividades).`,
+            message: `Resumen de agenda enviado exitosamente desde ${remitenteFinal} a ${destinoFinal} (${agendasConNombre.length} actividades).`,
+            remitente: remitenteFinal,
+            destinatario: destinoFinal,
             total: agendasConNombre.length
         });
 
@@ -444,11 +505,13 @@ exports.eliminarAgendaAdmin = async (req, res) => {
 
 exports.obtenerAllAgendas = async (req, res) => {
     try {
-        const { usuario: userNombre, rol: userRol } = obtenerUsuarioYRol(req);
-        const { usuario, rol, semana, fecha } = req.query;
+        const { usuario: userNombre, rol: userRol, nombre: userName } = obtenerUsuarioYRol(req);
+        const { usuario, rol, semana, fecha, fechaInicio, fechaFin } = req.query;
 
         const rolConsultante = (userRol || '').toLowerCase().trim();
-        const esAdminOSup = ['admin', 'sup', 'adminsis', 'auditoria'].includes(rolConsultante);
+        const userNombreLower = (userNombre || '').toLowerCase().trim();
+        const esAdminAudi = rolConsultante === 'admin-audi' || userNombreLower === 'admin-audi';
+        const esAdminOSup = ['admin', 'sup', 'adminsis', 'auditoria'].includes(rolConsultante) || esAdminAudi;
 
         // ----------------------------------------------------------------
         // Construcción de filtros por colección
@@ -461,7 +524,18 @@ exports.obtenerAllAgendas = async (req, res) => {
         // Filtro para agendaasesors (campo: asesor, semana, fecha)
         const filtroAsesor = {};
 
-        if (!esAdminOSup && userNombre) {
+        if (esAdminAudi) {
+            // Usuario admin-audi: SOLO ve actividades correspondientes a auditoria (los 3 auditores)
+            filtroAdmin.rol = 'auditoria';
+            if (usuario) {
+                filtroAdmin.$or = [
+                    { usuario: new RegExp(`^${usuario}$`, 'i') },
+                    { nombre: new RegExp(`^${usuario}$`, 'i') }
+                ];
+            }
+            filtroCoord._id = null;
+            filtroAsesor._id = null;
+        } else if (!esAdminOSup && userNombre) {
             // Usuario no-admin: solo ve sus propias actividades
             let nombreUsuario = userNombre;
             try {
@@ -512,8 +586,22 @@ exports.obtenerAllAgendas = async (req, res) => {
             filtroAsesor.semana = semana;
         }
 
-        // Filtro por fecha exacta (aplica a todas)
-        if (fecha) {
+        // Filtro por rango de fechas (aplica a todas)
+        if (fechaInicio || fechaFin) {
+            const rangeFecha = {};
+            if (fechaInicio) {
+                rangeFecha.$gte = new Date(fechaInicio);
+            }
+            if (fechaFin) {
+                const fFin = new Date(fechaFin);
+                fFin.setUTCHours(23, 59, 59, 999);
+                rangeFecha.$lte = fFin;
+            }
+            filtroAdmin.fecha = rangeFecha;
+            filtroCoord.fecha = rangeFecha;
+            filtroAsesor.fecha = rangeFecha;
+        } else if (fecha) {
+            // Filtro por fecha exacta
             const fechaBusqueda = new Date(fecha);
             const diaSiguiente = new Date(fecha);
             diaSiguiente.setDate(diaSiguiente.getDate() + 1);
@@ -524,61 +612,70 @@ exports.obtenerAllAgendas = async (req, res) => {
         }
 
         // ----------------------------------------------------------------
-        // Consultas paralelas a las 3 colecciones
+        // Proyecciones optimizadas (excluye campos pesados como firmas o evidencias)
         // ----------------------------------------------------------------
-        const [agendasAdmin, agendasCoord, agendasAses] = await Promise.all([
-            AgendaAdmin.find(filtroAdmin).lean(),
-            Agenda.find(filtroCoord).lean(),
-            AgendaAsesor.find(filtroAsesor).lean()
+        const projAdmin = { _id: 1, usuario: 1, nombre: 1, rol: 1, semana: 1, fecha: 1, hora: 1, domicilio: 1, actividad: 1, createdAt: 1 };
+        const projCoord = { _id: 1, coordinador: 1, semana: 1, fecha: 1, hora: 1, actividad: 1, domicilio: 1, codigo: 1, codigoReportado: 1, actividadReportada: 1, reportado: 1, horaReporte: 1, horaCierre: 1, cumplimientoAgenda: 1, acordeObjetivo: 1, resultado: 1, createdAt: 1 };
+        const projAsesor = { _id: 1, asesor: 1, coordinacion: 1, semana: 1, fecha: 1, hora: 1, actividad: 1, domicilio: 1, codigo: 1, acordeObjetivo: 1, resultado: 1, validada: 1, motivoRechazo: 1, validadaPor: 1, createdAt: 1 };
+
+        // ----------------------------------------------------------------
+        // Consultas paralelas a las 3 colecciones y mapa de usuarios
+        // ----------------------------------------------------------------
+        const [agendasAdmin, agendasCoord, agendasAses, mapaNombres] = await Promise.all([
+            AgendaAdmin.find(filtroAdmin, projAdmin).sort({ fecha: 1, hora: 1 }).lean(),
+            esAdminAudi ? Promise.resolve([]) : Agenda.find(filtroCoord, projCoord).sort({ fecha: 1, hora: 1 }).lean(),
+            esAdminAudi ? Promise.resolve([]) : AgendaAsesor.find(filtroAsesor, projAsesor).sort({ fecha: 1, hora: 1 }).lean(),
+            construirMapaNombres()
         ]);
 
-        // Enriquecer nombres desde tabla de usuarios
-        const usuarios = await Usuario.find({}, 'usuario nombre').lean();
-        const mapaNombres = new Map(usuarios.map(u => [(u.usuario || '').toLowerCase(), u.nombre || u.usuario]));
-
         // Normalizar agendaadmin
-        const normAdmin = agendasAdmin.map(ag => ({
-            ...ag,
-            nombre: ag.nombre || mapaNombres.get((ag.usuario || '').toLowerCase()) || ag.usuario || 'Sin asignar',
-            rol: ag.rol || 'admin'
-        }));
+        const normAdmin = agendasAdmin.map(ag => {
+            const loginAdmin = (ag.usuario || '').trim();
+            return {
+                ...ag,
+                nombre: resolverNombreCompleto(mapaNombres, loginAdmin, ag.nombre),
+                usuario: loginAdmin,
+                rol: ag.rol || 'admin'
+            };
+        });
 
         // Normalizar coordinadores: agregar rol y nombre desde campo coordinador
-        const normCoord = agendasCoord.map(ag => ({
-            ...ag,
-            rol: 'coordinador',
-            nombre: ag.coordinador || 'Sin asignar',
-            usuario: ag.coordinador || ''
-        }));
+        const normCoord = agendasCoord.map(ag => {
+            const loginCoord = (ag.coordinador || '').trim();
+            return {
+                ...ag,
+                rol: 'coordinador',
+                nombre: resolverNombreCompleto(mapaNombres, loginCoord, ag.nombre),
+                usuario: loginCoord
+            };
+        });
 
         // Normalizar asesores: agregar rol y nombre desde campo asesor
-        const normAsesor = agendasAses.map(ag => ({
-            ...ag,
-            rol: 'asesor',
-            nombre: ag.asesor || 'Sin asignar',
-            usuario: ag.asesor || ''
-        }));
+        const normAsesor = agendasAses.map(ag => {
+            const loginAsesor = (ag.asesor || '').trim();
+            return {
+                ...ag,
+                rol: 'asesor',
+                nombre: resolverNombreCompleto(mapaNombres, loginAsesor, ag.nombre),
+                usuario: loginAsesor
+            };
+        });
 
-        // Combinar y ordenar: fecha ASC → nombre ASC → hora ASC
-        // Así se agrupa por persona dentro de cada día
+        // Combinar
         const todasLasAgendas = [...normAdmin, ...normCoord, ...normAsesor];
 
-        todasLasAgendas.sort((a, b) => {
-            // 1. Por fecha
-            const fA = a.fecha ? new Date(a.fecha).toISOString().substring(0, 10) : '';
-            const fB = b.fecha ? new Date(b.fecha).toISOString().substring(0, 10) : '';
-            if (fA !== fB) return fA.localeCompare(fB);
-
-            // 2. Por nombre (agrupa todas las actividades de una persona en el mismo día)
-            const nA = (a.nombre || '').toLowerCase();
-            const nB = (b.nombre || '').toLowerCase();
-            if (nA !== nB) return nA.localeCompare(nB);
-
-            // 3. Por hora
-            const hA = (a.hora || '').trim();
-            const hB = (b.hora || '').trim();
-            return hA.localeCompare(hB);
-        });
+        // Ordenamiento optimizado de alto rendimiento con claves precalculadas (fecha ASC → nombre ASC → hora ASC)
+        for (let i = 0; i < todasLasAgendas.length; i++) {
+            const ag = todasLasAgendas[i];
+            const f = ag.fecha ? (typeof ag.fecha === 'string' ? ag.fecha.substring(0, 10) : new Date(ag.fecha).toISOString().substring(0, 10)) : '';
+            const n = (ag.nombre || '').toLowerCase();
+            const h = (ag.hora || '').trim();
+            ag._sk = `${f}_${n}_${h}`;
+        }
+        todasLasAgendas.sort((a, b) => a._sk.localeCompare(b._sk));
+        for (let i = 0; i < todasLasAgendas.length; i++) {
+            delete todasLasAgendas[i]._sk;
+        }
 
         res.status(200).json({
             success: true,

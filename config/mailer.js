@@ -5,11 +5,11 @@ if (dns.setDefaultResultOrder) {
 
 const nodemailer = require("nodemailer");
 
-// Configuración del transporter forzando IPv4 (family: 4) en port 465 (SSL) para evitar ENETUNREACH en Render
+// Configuración del transporter para correo institucional HostPapa cPanel o Gmail
 const obtenerConfiguracionTransporter = () => {
-    const user = (process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com").trim();
-    const pass = (process.env.EMAIL_PASS || "atwd ujuh szea pttu").trim();
-    const host = (process.env.EMAIL_HOST || "smtp.gmail.com").trim();
+    const user = (process.env.EMAIL_USER || "transformacion.digital@vamosamejorar.com").trim();
+    const pass = (process.env.EMAIL_PASS || "VAMtransdg2025").trim();
+    const host = (process.env.EMAIL_HOST || (user.endsWith("@gmail.com") ? "smtp.gmail.com" : "mail.vamosamejorar.com")).trim();
     const port = Number(process.env.EMAIL_PORT) || 465;
     const secure = process.env.EMAIL_SECURE !== undefined
         ? (process.env.EMAIL_SECURE === "true" || process.env.EMAIL_SECURE === true)
@@ -19,7 +19,7 @@ const obtenerConfiguracionTransporter = () => {
         host,
         port,
         secure,
-        family: 4, // CRÍTICO: Forzar IPv4 para evitar ENETUNREACH en contenedores Linux / Render
+        family: 4,
         auth: {
             user,
             pass
@@ -37,24 +37,26 @@ const transporter = nodemailer.createTransport(obtenerConfiguracionTransporter()
 
 /**
  * Función central para despachar correos:
- * 1. Si existe GMAIL_WEBHOOK_URL (Google Apps Script HTTPS puerto 443) -> Envía nativo por Gmail sin bloqueo.
+ * 1. Si existe GMAIL_WEBHOOK_URL -> Envía por HTTPS puerto 443.
  * 2. Si existe BREVO_API_KEY -> Envía vía Brevo REST API (HTTPS puerto 443).
- * 3. Fallback: SMTP directo con Nodemailer (funciona en local).
+ * 3. Fallback: SMTP institucional con Nodemailer (mail.vamosamejorar.com:465).
  */
-const enviarCorreo = async ({ from, to, subject, html, text }) => {
+const enviarCorreo = async ({ from, to, cc, subject, html, text }) => {
     const gmailWebhook = (process.env.GMAIL_WEBHOOK_URL || '').trim();
     const brevoKey = (process.env.BREVO_API_KEY || '').trim();
-    const emailUser = (process.env.EMAIL_USER || 'transformaciondigitalvam@gmail.com').trim();
-    const emailDestino = to || (process.env.EMAIL_DESTINO || 'danielamanzanorangel@gmail.com').trim();
+    const emailUser = (process.env.EMAIL_USER || 'transformacion.digital@vamosamejorar.com').trim();
+    const emailDestino = to || (process.env.EMAIL_DESTINO || 'o.alfaro@vamosamejorar.com').trim();
+    const emailCc = cc || (process.env.EMAIL_CC || 'transformacion.digital@vamosamejorar.com').trim();
 
     // 1. VÍA GOOGLE APPS SCRIPT WEBHOOK (HTTPS - PUERTO 443, NATIVO GMAIL, 0 BLOQUEOS EN RENDER)
     if (gmailWebhook) {
-        console.log(`[Mailer] 🌐 Enviando vía Google Apps Script (HTTPS 443) a: ${emailDestino}...`);
+        console.log(`[Mailer] 🌐 Enviando vía Google Apps Script (HTTPS 443) a: ${emailDestino} (CC: ${emailCc})...`);
         const resp = await fetch(gmailWebhook, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 to: emailDestino,
+                cc: emailCc,
                 subject: subject,
                 html: html,
                 text: text || ''
@@ -67,10 +69,25 @@ const enviarCorreo = async ({ from, to, subject, html, text }) => {
 
     // 2. VÍA BREVO REST API (HTTPS - PUERTO 443)
     if (brevoKey) {
-        console.log(`[Mailer] 🌐 Enviando vía Brevo API (HTTPS 443) a: ${emailDestino}...`);
+        console.log(`[Mailer] 🌐 Enviando vía Brevo API (HTTPS 443) a: ${emailDestino} (CC: ${emailCc})...`);
         const destinatarios = (Array.isArray(emailDestino) ? emailDestino : emailDestino.split(','))
             .map(e => ({ email: e.trim() }))
             .filter(d => d.email);
+
+        const ccDestinatarios = emailCc
+            ? (Array.isArray(emailCc) ? emailCc : emailCc.split(','))
+                .map(e => ({ email: e.trim() }))
+                .filter(d => d.email)
+            : [];
+
+        const brevoPayload = {
+            sender: { name: 'Sistema VAM Operaciones', email: emailUser },
+            to: destinatarios,
+            subject: subject,
+            htmlContent: html,
+            textContent: text || ''
+        };
+        if (ccDestinatarios.length > 0) brevoPayload.cc = ccDestinatarios;
 
         const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
             method: 'POST',
@@ -79,13 +96,7 @@ const enviarCorreo = async ({ from, to, subject, html, text }) => {
                 'api-key': brevoKey,
                 'content-type': 'application/json'
             },
-            body: JSON.stringify({
-                sender: { name: 'Sistema VAM Operaciones', email: emailUser },
-                to: destinatarios,
-                subject: subject,
-                htmlContent: html,
-                textContent: text || ''
-            })
+            body: JSON.stringify(brevoPayload)
         });
 
         if (!resp.ok) {
@@ -99,15 +110,18 @@ const enviarCorreo = async ({ from, to, subject, html, text }) => {
     }
 
     // 3. VÍA NODEMAILER SMTP DIRECTO
-    console.log(`[Mailer] 📧 Enviando vía Nodemailer SMTP (${process.env.EMAIL_HOST || 'smtp.gmail.com'}:465) a: ${emailDestino}...`);
+    console.log(`[Mailer] 📧 Enviando vía Nodemailer SMTP (${process.env.EMAIL_HOST || 'mail.vamosamejorar.com'}:465) a: ${emailDestino} (CC: ${emailCc})...`);
     try {
-        const info = await transporter.sendMail({
+        const smtpOptions = {
             from: from || `"Sistema VAM Operaciones" <${emailUser}>`,
             to: emailDestino,
             subject: subject,
             html: html,
             text: text
-        });
+        };
+        if (emailCc) smtpOptions.cc = emailCc;
+
+        const info = await transporter.sendMail(smtpOptions);
         console.log(`[Mailer] ✅ Correo entregado exitosamente vía SMTP (MessageId: ${info.messageId})`);
         return info;
     } catch (smtpErr) {
@@ -160,12 +174,14 @@ const enviarNotificacionAgenda = async (agenda) => {
         rh: "Recursos Humanos (RH)",
     }[(agenda.rol || "").toLowerCase().trim()] || agenda.rol;
 
-    const emailUser = (process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com").trim();
-    const emailDestino = (process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com").trim();
+    const emailUser = (process.env.EMAIL_USER || "transformacion.digital@vamosamejorar.com").trim();
+    const emailDestino = (process.env.EMAIL_DESTINO || "o.alfaro@vamosamejorar.com").trim();
+    const emailCc = (process.env.EMAIL_CC || "transformacion.digital@vamosamejorar.com").trim();
 
     const mailOptions = {
         from: `"Sistema VAM Operaciones" <${emailUser}>`,
         to: emailDestino,
+        cc: emailCc,
         subject: `Nueva agenda registrada — ${rolLabel}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
@@ -209,7 +225,7 @@ const enviarNotificacionAgenda = async (agenda) => {
     };
 
     await enviarCorreo(mailOptions);
-    console.log(`[Mailer] Notificacion enviada a ${emailDestino} (rol: ${agenda.rol})`);
+    console.log(`[Mailer] Notificacion enviada a ${emailDestino} con CC: ${emailCc} (rol: ${agenda.rol})`);
 };
 
 /**
@@ -242,8 +258,9 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const emitidoEn = new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
 
     const responsable = agendas[0]?.nombre || agendas[0]?.usuario || 'Usuario';
-    const emailRemitente = (process.env.EMAIL_USER || "transformaciondigitalvam@gmail.com").trim();
-    const emailDestino = (process.env.EMAIL_DESTINO || "danielamanzanorangel@gmail.com").trim();
+    const emailRemitente = (process.env.EMAIL_USER || "transformacion.digital@vamosamejorar.com").trim();
+    const emailDestino = (process.env.EMAIL_DESTINO || "o.alfaro@vamosamejorar.com").trim();
+    const emailCc = (process.env.EMAIL_CC || "transformacion.digital@vamosamejorar.com").trim();
 
     const rolLabel = {
         auditoria: "Auditoría",
@@ -276,6 +293,7 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     const mailOptions = {
         from: `"Sistema VAM Operaciones" <${emailRemitente}>`,
         to: emailDestino,
+        cc: emailCc,
         subject: `Resumen de Agenda — ${responsable} (${periodoTexto})`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
@@ -317,7 +335,7 @@ const enviarResumenAgendaEmail = async (agendas, fechaInicio, fechaFin) => {
     };
 
     await enviarCorreo(mailOptions);
-    console.log(`[Mailer] Resumen de agenda enviado a ${emailDestino} (${agendas.length} actividades)`);
+    console.log(`[Mailer] Resumen de agenda enviado a ${emailDestino} con CC: ${emailCc} (${agendas.length} actividades)`);
 };
 
 module.exports = {
